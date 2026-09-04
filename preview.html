@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MONE — preview (celular + computador)</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: #eef1ee;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 32px 24px 60px;
+      gap: 28px;
+    }
+    h1 {
+      font-size: 18px;
+      color: #173B32;
+      margin: 0;
+    }
+    .sub {
+      font-size: 13px;
+      color: #4F8068;
+      margin-top: -18px;
+    }
+    .palco {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      justify-content: center;
+      gap: 40px;
+      width: 100%;
+    }
+    .coluna {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+    .rotulo {
+      font-size: 13px;
+      font-weight: 700;
+      color: #173B32;
+      background: #fff;
+      padding: 6px 14px;
+      border-radius: 999px;
+      box-shadow: 0 2px 8px rgba(23,59,50,0.08);
+    }
+
+    /* moldura de celular */
+    .celular {
+      width: 390px;
+      height: 844px;
+      background: #111;
+      border-radius: 48px;
+      padding: 14px;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.25);
+      position: relative;
+    }
+    .celular .notch {
+      position: absolute;
+      top: 14px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 120px;
+      height: 26px;
+      background: #111;
+      border-bottom-left-radius: 16px;
+      border-bottom-right-radius: 16px;
+      z-index: 2;
+    }
+    .celular iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+      border-radius: 32px;
+      background: #fff;
+    }
+
+    /* moldura de computador */
+    .computador {
+      width: min(80vw, 1200px);
+      background: #1b1b1b;
+      border-radius: 14px 14px 0 0;
+      padding: 10px 10px 0;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+    }
+    .computador .barra {
+      display: flex;
+      gap: 6px;
+      padding: 4px 6px 10px;
+    }
+    .computador .bolinha {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #555;
+    }
+    .computador iframe {
+      width: 100%;
+      height: 720px;
+      border: none;
+      background: #fff;
+      border-radius: 4px 4px 0 0;
+      display: block;
+    }
+    .computador .base {
+      height: 14px;
+      background: #2a2a2a;
+      border-radius: 0 0 6px 6px;
+    }
+
+    @media (max-width: 900px) {
+      .computador { width: 92vw; }
+      .computador iframe { height: 480px; }
+      .celular { transform: scale(0.85); margin: -60px 0; }
+    }
+  </style>
+</head>
+<body>
+  <h1>MONE — preview ao vivo</h1>
+  <div class="sub">os dois quadros abaixo carregam o app real — clique, teste, e deixe esta aba aberta enquanto construímos</div>
+
+  <div class="palco">
+    <div class="coluna">
+      <div class="rotulo">📱 Celular</div>
+      <div class="celular">
+        <div class="notch"></div>
+        <iframe src="./index.html" title="MONE no celular"></iframe>
+      </div>
+    </div>
+
+    <div class="coluna">
+      <div class="rotulo">💻 Computador</div>
+      <div class="computador">
+        <div class="barra">
+          <div class="bolinha"></div>
+          <div class="bolinha"></div>
+          <div class="bolinha"></div>
+        </div>
+        <iframe src="./index.html" title="MONE no computador"></iframe>
+        <div class="base"></div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

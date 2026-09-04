@@ -1,0 +1,1082 @@
+:root {
+  --verde-profundo: #173B32;
+  --verde-medio: #4F8068;
+  --verde-claro: #B8D8C0;
+  --creme: #F7F5EF;
+  --grafite: #202522;
+  --dourado: #D5A84B;
+
+  --raio: 18px;
+  --sombra: 0 8px 24px rgba(23, 59, 50, 0.08);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--creme);
+  color: var(--grafite);
+  font-family: "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.app {
+  max-width: 480px;
+  margin: 0 auto;
+  min-height: 100dvh;
+  padding: 20px 20px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.view {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.zonaBloco + .zonaBloco {
+  padding-top: 6px;
+  border-top: 1px solid rgba(23, 59, 50, 0.08);
+}
+
+header.topo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 8px;
+}
+
+.marca {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.marca .selo {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  background: var(--verde-profundo);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+}
+
+.marca .nome {
+  font-weight: 800;
+  font-size: 20px;
+  color: var(--verde-profundo);
+  letter-spacing: 0.5px;
+}
+
+.avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: var(--verde-claro);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  color: var(--verde-profundo);
+  font-weight: 700;
+}
+
+.topoAcoes {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.zonaPerigo {
+  border: 1px solid #e3b48f;
+  background: #fbe9dd;
+  border-radius: var(--raio);
+  padding: 16px;
+}
+
+.zonaPerigo h2 {
+  color: #9a4a20;
+}
+
+.zonaPerigoTexto {
+  font-size: 12.5px;
+  color: #7a4023;
+  margin: 0 0 12px;
+}
+
+.botaoPerigo {
+  border: none;
+  background: #c25a2f;
+  color: #fff;
+  font-weight: 700;
+  font-size: 13px;
+  padding: 10px 16px;
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+.confirmarReset {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 12.5px;
+  color: #7a4023;
+}
+
+.confirmarResetBotoes {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.hero {
+  background: linear-gradient(155deg, var(--verde-profundo), #0e2a23);
+  color: var(--creme);
+  border-radius: var(--raio);
+  padding: 28px 22px;
+  box-shadow: var(--sombra);
+  position: relative;
+  overflow: hidden;
+}
+
+.hero::after {
+  content: "🌱";
+  position: absolute;
+  right: -6px;
+  bottom: -18px;
+  font-size: 96px;
+  opacity: 0.12;
+}
+
+.hero .eyebrow {
+  font-size: 13px;
+  color: var(--verde-claro);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 10px;
+}
+
+.hero h1 {
+  margin: 0 0 10px;
+  font-size: 24px;
+  line-height: 1.35;
+  font-weight: 800;
+}
+
+.hero p {
+  margin: 0;
+  font-size: 14.5px;
+  color: rgba(247, 245, 239, 0.8);
+  line-height: 1.5;
+}
+
+.hero .exemplo {
+  margin-top: 18px;
+  background: rgba(247, 245, 239, 0.08);
+  border: 1px solid rgba(247, 245, 239, 0.16);
+  border-radius: 14px;
+  padding: 12px 14px;
+  font-size: 13.5px;
+  color: var(--creme);
+}
+
+.hero h1 {
+  font-size: 32px;
+  margin-top: 4px;
+}
+
+.linhaResumo {
+  display: flex;
+  gap: 18px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+
+.resumoItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: rgba(247, 245, 239, 0.85);
+}
+
+.resumoTexto b {
+  display: block;
+  color: var(--creme);
+  font-size: 14px;
+}
+
+section h2 {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--verde-profundo);
+  margin: 0 0 12px;
+}
+
+.caixaConversa {
+  display: flex;
+  gap: 10px;
+}
+
+.caixaConversa input {
+  flex: 1;
+  border: 1px solid rgba(23, 59, 50, 0.15);
+  background: #fff;
+  border-radius: 14px;
+  padding: 14px 16px;
+  font-size: 14.5px;
+  font-family: inherit;
+  color: var(--grafite);
+  outline: none;
+}
+
+.caixaConversa input:focus {
+  border-color: var(--verde-medio);
+}
+
+.caixaConversa button {
+  border: none;
+  background: var(--verde-profundo);
+  color: var(--creme);
+  font-weight: 700;
+  font-size: 14px;
+  border-radius: 14px;
+  padding: 0 20px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.caixaConversa button:hover {
+  background: #0e2a23;
+}
+
+.feedback {
+  margin-top: 10px;
+  background: var(--verde-claro);
+  color: var(--verde-profundo);
+  font-size: 13px;
+  padding: 10px 14px;
+  border-radius: 12px;
+}
+
+.listaHistorico {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.itemHistorico {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #fff;
+  border-radius: 14px;
+  padding: 12px 14px;
+  box-shadow: var(--sombra);
+  border: 1px solid rgba(23, 59, 50, 0.06);
+}
+
+.itemIcone {
+  font-size: 18px;
+}
+
+.itemInfo {
+  flex: 1;
+  min-width: 0;
+}
+
+.itemDescricao {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--grafite);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.itemMeta {
+  font-size: 12px;
+  color: var(--verde-medio);
+  margin-top: 2px;
+}
+
+.itemValor {
+  font-weight: 800;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.valorEntrada {
+  color: var(--verde-medio);
+}
+
+.valorSaida {
+  color: var(--grafite);
+}
+
+.vazio {
+  font-size: 13.5px;
+  color: var(--verde-medio);
+  text-align: center;
+  padding: 24px 10px;
+}
+
+.navInferior {
+  position: sticky;
+  bottom: 12px;
+  margin-top: 8px;
+  background: #fff;
+  border-radius: 18px;
+  box-shadow: var(--sombra);
+  display: flex;
+  justify-content: space-around;
+  padding: 10px 6px;
+  border: 1px solid rgba(23, 59, 50, 0.06);
+}
+
+.navItem {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  font-size: 10.5px;
+  color: var(--verde-medio);
+  opacity: 0.4;
+}
+
+.navItem span {
+  font-size: 18px;
+}
+
+.navItem.ativo {
+  opacity: 1;
+  color: var(--verde-profundo);
+  font-weight: 700;
+}
+
+.navItem.desabilitado {
+  cursor: default;
+}
+
+.tituloComLink {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.tituloComLink h2 {
+  margin: 0;
+}
+
+.linkBotao {
+  border: none;
+  background: none;
+  color: var(--verde-medio);
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+}
+
+.listaSaldoContas {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.cardSaldoConta {
+  flex: 0 0 auto;
+  min-width: 128px;
+  background: #fff;
+  border-radius: 14px;
+  padding: 12px 14px;
+  box-shadow: var(--sombra);
+  border: 1px solid rgba(23, 59, 50, 0.06);
+}
+
+.cardSaldoContaNome {
+  font-size: 12px;
+  color: var(--verde-medio);
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.cardSaldoContaValor {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--verde-profundo);
+}
+
+.cabecalhoView {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.voltar {
+  border: none;
+  background: none;
+  color: var(--verde-medio);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+}
+
+.tituloView {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--verde-profundo);
+}
+
+.listaContasCompleta {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cardConta {
+  background: #fff;
+  border-radius: 14px;
+  padding: 16px;
+  box-shadow: var(--sombra);
+  border: 1px solid rgba(23, 59, 50, 0.06);
+}
+
+.cardContaTopo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.cardContaNome {
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--grafite);
+}
+
+.cardContaTag {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--verde-medio);
+  background: var(--verde-claro);
+  padding: 3px 8px;
+  border-radius: 999px;
+}
+
+.cardContaSaldo {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--verde-profundo);
+}
+
+.novaContaSecao h2 {
+  margin-top: 4px;
+}
+
+.formNovaConta {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.formNovaConta input,
+.formNovaConta select {
+  border: 1px solid rgba(23, 59, 50, 0.15);
+  background: #fff;
+  border-radius: 14px;
+  padding: 12px 14px;
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--grafite);
+  outline: none;
+}
+
+.formNovaConta input:focus,
+.formNovaConta select:focus {
+  border-color: var(--verde-medio);
+}
+
+.formNovaConta button {
+  border: none;
+  background: var(--verde-profundo);
+  color: var(--creme);
+  font-weight: 700;
+  font-size: 14px;
+  border-radius: 14px;
+  padding: 12px;
+  cursor: pointer;
+}
+
+.listaReceitas {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.grupoReceita {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.grupoReceitaTitulo {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--verde-profundo);
+  padding: 0 2px;
+}
+
+.listaProximasFixas {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.cardFixaMini {
+  min-width: 140px;
+}
+
+.statusFixa {
+  font-size: 10.5px;
+  font-weight: 700;
+  margin-top: 4px;
+}
+
+.status-pendente { color: var(--verde-medio); }
+.status-paga { color: var(--verde-medio); }
+.status-atrasada { color: #b5502b; }
+
+.cardContaTag.status-atrasada {
+  color: #b5502b;
+  background: #f3ddd3;
+}
+
+.cardContaTag.status-paga {
+  color: var(--verde-medio);
+  background: var(--verde-claro);
+}
+
+.cardContaTag.status-pendente {
+  color: var(--dourado);
+  background: #f4e8d1;
+}
+
+.botaoPagarFixa {
+  margin-top: 10px;
+  border: none;
+  background: var(--verde-claro);
+  color: var(--verde-profundo);
+  font-weight: 700;
+  font-size: 12.5px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.listaContasFixasCompleta {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cabecalhoView {
+  justify-content: space-between;
+}
+
+.linkCalendario {
+  margin-left: auto;
+}
+
+.alternadorModo {
+  display: flex;
+  gap: 6px;
+  background: #fff;
+  border-radius: 12px;
+  padding: 4px;
+  box-shadow: var(--sombra);
+  margin-top: 4px;
+}
+
+.botaoModo {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: var(--verde-medio);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 8px;
+  border-radius: 9px;
+  cursor: pointer;
+}
+
+.botaoModo.ativo {
+  background: var(--verde-profundo);
+  color: var(--creme);
+}
+
+.modoCalendario {
+  margin-top: 16px;
+}
+
+.navMes {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 4px;
+}
+
+.setaMes {
+  border: none;
+  background: #fff;
+  box-shadow: var(--sombra);
+  color: var(--verde-profundo);
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.rotuloMes {
+  font-weight: 800;
+  font-size: 15px;
+  color: var(--verde-profundo);
+}
+
+.gradeSemana {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--verde-medio);
+  margin-top: 12px;
+}
+
+.gradeCalendario {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.diaCalendario {
+  aspect-ratio: 1;
+  background: #fff;
+  border-radius: 10px;
+  border: 1px solid rgba(23, 59, 50, 0.06);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  font-family: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+
+.diaCalendario.vazio-dia {
+  background: transparent;
+  border: none;
+  cursor: default;
+}
+
+.diaCalendario.diaHoje {
+  border: 1.5px solid var(--dourado);
+}
+
+.diaCalendario.diaSelecionado {
+  background: var(--verde-profundo);
+  border-color: var(--verde-profundo);
+}
+
+.diaCalendario.diaSelecionado .numeroDia {
+  color: var(--creme);
+}
+
+.detalheDia {
+  margin-top: 16px;
+  background: #fff;
+  border-radius: 14px;
+  padding: 14px;
+  box-shadow: var(--sombra);
+  border: 1px solid rgba(23, 59, 50, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.detalheDiaTitulo {
+  font-weight: 800;
+  font-size: 13.5px;
+  color: var(--verde-profundo);
+  text-transform: capitalize;
+}
+
+.itemAgenda {
+  box-shadow: none;
+  border: 1px solid rgba(23, 59, 50, 0.06);
+  padding: 10px 12px;
+}
+
+.listaSemana {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.blocoDiaSemana {
+  background: #fff;
+  border-radius: 14px;
+  padding: 12px 14px;
+  box-shadow: var(--sombra);
+  border: 1px solid rgba(23, 59, 50, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.blocoDiaSemana.diaHoje {
+  border-color: var(--dourado);
+}
+
+.blocoDiaSemanaTitulo {
+  display: flex;
+  justify-content: space-between;
+  font-weight: 800;
+  font-size: 13px;
+  color: var(--verde-profundo);
+}
+
+.vazioSemana {
+  padding: 4px 2px;
+  text-align: left;
+  font-size: 12.5px;
+}
+
+.cardCartaoClicavel {
+  width: 100%;
+  text-align: left;
+  border: 1px solid rgba(23, 59, 50, 0.06);
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.heroFatura {
+  padding-bottom: 22px;
+}
+
+.statusFaturaTexto {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--verde-claro);
+}
+
+.botaoPagarFaturaGrande {
+  margin-top: 16px;
+  border: none;
+  background: var(--dourado);
+  color: var(--verde-profundo);
+  font-weight: 800;
+  font-size: 14px;
+  padding: 12px 18px;
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+.cardProjecao {
+  background: #fff;
+  border-radius: var(--raio);
+  padding: 18px 20px;
+  box-shadow: var(--sombra);
+  border: 1px solid rgba(23, 59, 50, 0.06);
+  text-align: center;
+}
+
+.projecaoLegenda {
+  font-size: 12px;
+  color: var(--verde-medio);
+}
+
+.projecaoValor {
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--verde-profundo);
+  margin: 4px 0;
+}
+
+.alertaProjecao {
+  margin-top: 10px;
+  background: #fbe9dd;
+  border: 1px solid #e3b48f;
+  border-radius: 14px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.alertaProjecaoTitulo {
+  font-weight: 800;
+  font-size: 13.5px;
+  color: #9a4a20;
+}
+
+.alertaProjecaoTexto {
+  font-size: 12.5px;
+  color: #7a4023;
+}
+
+.alertaProjecaoLista {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+  color: #7a4023;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.barraProgresso {
+  width: 100%;
+  height: 7px;
+  background: var(--verde-claro);
+  border-radius: 999px;
+  overflow: hidden;
+  margin-top: 8px;
+}
+
+.barraProgressoPreenchimento {
+  height: 100%;
+  background: var(--verde-medio);
+  border-radius: 999px;
+}
+
+.barraProgressoPreenchimento.estourada {
+  background: #c25a2f;
+}
+
+.cardOrcamentoMini {
+  min-width: 150px;
+}
+
+.graficoAnalise {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.barGraficoItem {
+  display: flex;
+  flex-direction: column;
+}
+
+.barGraficoLabel {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--grafite);
+  margin-bottom: 2px;
+}
+
+.zona {
+  border-radius: var(--raio);
+  padding: 18px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.zonaTitulo {
+  font-size: 11.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--verde-profundo);
+  opacity: 0.75;
+}
+
+.zonaBloco {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.subtitulo {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--verde-profundo);
+  margin: 0;
+}
+
+.zona--dinheiro {
+  background: rgba(184, 216, 192, 0.32);
+}
+
+.zona--compromissos {
+  background: rgba(213, 168, 75, 0.12);
+}
+
+.zona--atividade {
+  background: rgba(32, 37, 34, 0.045);
+}
+
+.botaoMostrarMais {
+  align-self: center;
+  margin-top: 4px;
+}
+
+.formGuardarMeta {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.formGuardarMeta input {
+  flex: 1;
+  border: 1px solid rgba(23, 59, 50, 0.15);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 12.5px;
+  font-family: inherit;
+  color: var(--grafite);
+  outline: none;
+}
+
+.formGuardarMeta button {
+  border: none;
+  background: var(--verde-claro);
+  color: var(--verde-profundo);
+  font-weight: 700;
+  font-size: 12.5px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.arvoreSecaoInicio {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.palcoArvoreCompacto {
+  padding: 12px;
+}
+
+.palcoArvoreCompacto .svgArvore {
+  max-width: 170px;
+}
+
+.palcoArvore {
+  background: linear-gradient(180deg, #fff, var(--verde-claro) 180%);
+  border-radius: var(--raio);
+  box-shadow: var(--sombra);
+  border: 1px solid rgba(23, 59, 50, 0.06);
+  padding: 20px;
+  display: flex;
+  justify-content: center;
+}
+
+.svgArvore {
+  width: 100%;
+  max-width: 260px;
+  height: auto;
+}
+
+.arvoreExplicacao {
+  background: #fff;
+  border-radius: var(--raio);
+  box-shadow: var(--sombra);
+  border: 1px solid rgba(23, 59, 50, 0.06);
+  padding: 16px 18px;
+  text-align: center;
+}
+
+.arvoreExplicacaoTitulo {
+  font-weight: 800;
+  font-size: 16px;
+  color: var(--verde-profundo);
+  margin-bottom: 6px;
+}
+
+.arvoreExplicacaoTexto {
+  font-size: 13px;
+  color: var(--verde-medio);
+}
+
+.numeroDia {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--grafite);
+}
+
+.pontosDia {
+  display: flex;
+  gap: 2px;
+  height: 6px;
+}
+
+.pontoEntrada, .pontoSaida, .pontoVencimento {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.pontoEntrada { background: var(--verde-medio); }
+.pontoSaida { background: var(--grafite); }
+.pontoVencimento { background: var(--dourado); }
+
+.legendaCalendario {
+  display: flex;
+  gap: 14px;
+  justify-content: center;
+  margin-top: 14px;
+  font-size: 11.5px;
+  color: var(--verde-medio);
+}
+
+.legendaCalendario span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+@media (min-width: 700px) {
+  .app {
+    max-width: 640px;
+    padding: 40px 32px 60px;
+  }
+
+  .hero h1 {
+    font-size: 38px;
+  }
+}

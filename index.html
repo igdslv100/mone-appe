@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MONE — seu assistente financeiro</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" href="icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+  <meta name="theme-color" content="#173B32" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="MONE" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+</head>
+<body>
+  <!-- TELA: Login / cadastro -->
+  <div id="telaAuth" class="app" hidden>
+    <header class="topo">
+      <div class="marca">
+        <div class="selo">🌱</div>
+        <div class="nome">MONE</div>
+      </div>
+    </header>
+
+    <div class="hero">
+      <div class="eyebrow">Bem-vindo(a)</div>
+      <h1 style="font-size: 24px;">Entre ou crie sua conta</h1>
+      <p style="color: rgba(247,245,239,0.8); font-size: 13px; margin: 8px 0 0;">Seus dados financeiros salvos com segurança, só você tem acesso.</p>
+    </div>
+
+    <section class="conversa">
+      <div class="alternadorModo">
+        <button type="button" class="botaoModo ativo" data-modo-auth="login">Entrar</button>
+        <button type="button" class="botaoModo" data-modo-auth="cadastro">Criar conta</button>
+      </div>
+
+      <form id="formLogin" class="formNovaConta" style="margin-top: 16px;">
+        <input type="email" id="emailLogin" placeholder="seu@email.com" autocomplete="email" required />
+        <input type="password" id="senhaLogin" placeholder="Senha" autocomplete="current-password" required />
+        <button type="submit">Entrar</button>
+      </form>
+
+      <form id="formCadastro" class="formNovaConta" style="margin-top: 16px;" hidden>
+        <input type="email" id="emailCadastro" placeholder="seu@email.com" autocomplete="email" required />
+        <input type="password" id="senhaCadastro" placeholder="Crie uma senha (mín. 6 caracteres)" autocomplete="new-password" minlength="6" required />
+        <button type="submit">Criar conta</button>
+      </form>
+
+      <div id="feedbackAuth" class="feedback" hidden></div>
+    </section>
+  </div>
+
+  <div id="appConteudo" class="app" hidden>
+    <header class="topo">
+      <div class="marca">
+        <div class="selo">🌱</div>
+        <div class="nome">MONE</div>
+      </div>
+      <div class="topoAcoes">
+        <button id="botaoSair" class="linkBotao">sair</button>
+        <div class="avatar">👋</div>
+      </div>
+    </header>
+
+    <!-- VIEW: Início -->
+    <div id="viewInicio" class="view">
+      <div class="hero">
+        <div class="eyebrow">Saldo disponível</div>
+        <h1 id="saldoTotal">R$ 0,00</h1>
+        <div class="linhaResumo">
+          <div class="resumoItem">
+            <span class="resumoIcone">⬆️</span>
+            <span class="resumoTexto">Entradas <b id="totalEntradas">R$ 0,00</b></span>
+          </div>
+          <div class="resumoItem">
+            <span class="resumoIcone">⬇️</span>
+            <span class="resumoTexto">Saídas <b id="totalSaidas">R$ 0,00</b></span>
+          </div>
+          <div class="resumoItem">
+            <span class="resumoIcone">💳</span>
+            <span class="resumoTexto">Faturas em aberto <b id="totalFaturasAbertas">R$ 0,00</b></span>
+          </div>
+        </div>
+      </div>
+
+      <section class="arvoreSecaoInicio">
+        <div id="palcoArvore" class="palcoArvore palcoArvoreCompacto"></div>
+        <div class="arvoreExplicacao">
+          <div class="arvoreExplicacaoTitulo" id="arvoreTitulo">—</div>
+          <div class="arvoreExplicacaoTexto" id="arvoreExplicacaoTexto">—</div>
+        </div>
+      </section>
+
+      <section class="projecaoSecao">
+        <h2>🔮 Projeção do mês</h2>
+        <div class="cardProjecao">
+          <div class="projecaoLegenda">Você deve fechar o mês com</div>
+          <div class="projecaoValor" id="projecaoValor">R$ 0,00</div>
+          <div class="projecaoLegenda">disponível, considerando contas fixas e faturas ainda em aberto</div>
+        </div>
+        <div id="alertaProjecao" class="alertaProjecao" hidden></div>
+      </section>
+
+      <section class="conversa">
+        <h2>Conte pro MONE</h2>
+        <form id="formConversa" class="caixaConversa">
+          <input
+            type="text"
+            id="inputConversa"
+            placeholder='Ex.: "Gastei R$80 no mercado hoje"'
+            autocomplete="off"
+          />
+          <button type="submit">Registrar</button>
+        </form>
+        <div id="feedback" class="feedback" hidden></div>
+      </section>
+
+      <section class="zona zona--dinheiro">
+        <div class="zonaTitulo">💰 Seu dinheiro</div>
+
+        <div class="zonaBloco">
+          <div class="tituloComLink">
+            <h3 class="subtitulo">Saldo por conta</h3>
+            <button class="linkBotao" data-ir="contas">gerenciar →</button>
+          </div>
+          <div id="listaSaldoContas" class="listaSaldoContas"></div>
+        </div>
+
+        <div class="zonaBloco">
+          <div class="tituloComLink">
+            <h3 class="subtitulo">Orçamento</h3>
+            <button class="linkBotao" data-ir="orcamento">gerenciar →</button>
+          </div>
+          <div id="listaResumoOrcamento" class="listaProximasFixas"></div>
+        </div>
+
+        <div class="zonaBloco">
+          <div class="tituloComLink">
+            <h3 class="subtitulo">🎯 Metas</h3>
+            <button class="linkBotao" data-ir="metas">gerenciar →</button>
+          </div>
+          <div id="listaResumoMetas" class="listaProximasFixas"></div>
+        </div>
+      </section>
+
+      <section class="zona zona--compromissos">
+        <div class="zonaTitulo">📌 Compromissos</div>
+
+        <div class="zonaBloco">
+          <div class="tituloComLink">
+            <h3 class="subtitulo">Contas fixas</h3>
+            <button class="linkBotao" data-ir="contasFixas">gerenciar →</button>
+          </div>
+          <div id="listaProximasFixas" class="listaProximasFixas"></div>
+        </div>
+
+        <div class="zonaBloco">
+          <div class="tituloComLink">
+            <h3 class="subtitulo">Cartões</h3>
+            <button class="linkBotao" data-ir="cartoes">gerenciar →</button>
+          </div>
+          <div id="listaResumoCartoes" class="listaProximasFixas"></div>
+        </div>
+      </section>
+
+      <section class="zona zona--atividade">
+        <div class="zonaTitulo">🕓 Atividade</div>
+
+        <div class="zonaBloco">
+          <div class="tituloComLink">
+            <h3 class="subtitulo">Histórico</h3>
+            <button class="linkBotao" data-ir="receitas">ver receitas →</button>
+          </div>
+          <div id="listaHistorico" class="listaHistorico">
+            <p class="vazio">Nada por aqui ainda — registre sua primeira movimentação acima 👆</p>
+          </div>
+          <button id="toggleHistorico" class="linkBotao botaoMostrarMais" hidden>mostrar mais ↓</button>
+        </div>
+      </section>
+    </div>
+
+    <!-- VIEW: Contas -->
+    <div id="viewContas" class="view" hidden>
+      <div class="cabecalhoView">
+        <button class="voltar" data-ir="inicio">← voltar</button>
+        <h2 class="tituloView">Contas</h2>
+      </div>
+
+      <div id="listaContas" class="listaContasCompleta"></div>
+
+      <section class="novaContaSecao">
+        <h2>Nova conta</h2>
+        <form id="formNovaConta" class="formNovaConta">
+          <input type="text" id="nomeConta" placeholder="Ex.: Nubank, Dinheiro, Poupança" autocomplete="off" required />
+          <select id="tipoConta">
+            <option value="banco">Banco</option>
+            <option value="dinheiro">Dinheiro</option>
+            <option value="poupanca">Poupança</option>
+            <option value="investimento">Investimento</option>
+          </select>
+          <button type="submit">Adicionar conta</button>
+        </form>
+      </section>
+
+      <section class="zonaPerigo">
+        <h2>Zona de risco</h2>
+        <p class="zonaPerigoTexto">Isso apaga TODOS os seus dados no MONE (contas, movimentações, cartões, metas...). Não dá pra desfazer.</p>
+        <button id="botaoResetar" type="button" class="botaoPerigo">Resetar todos os dados</button>
+        <div id="confirmarReset" class="confirmarReset" hidden>
+          <span>Tem certeza? Isso não pode ser desfeito.</span>
+          <div class="confirmarResetBotoes">
+            <button id="confirmarResetSim" type="button" class="botaoPerigo">Sim, apagar tudo</button>
+            <button id="confirmarResetNao" type="button" class="linkBotao">Cancelar</button>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- VIEW: Receitas -->
+    <div id="viewReceitas" class="view" hidden>
+      <div class="cabecalhoView">
+        <button class="voltar" data-ir="inicio">← voltar</button>
+        <h2 class="tituloView">Receitas</h2>
+      </div>
+      <div id="listaReceitas" class="listaReceitas"></div>
+    </div>
+
+    <!-- VIEW: Contas fixas -->
+    <div id="viewContasFixas" class="view" hidden>
+      <div class="cabecalhoView">
+        <button class="voltar" data-ir="inicio">← voltar</button>
+        <h2 class="tituloView">Contas fixas</h2>
+      </div>
+
+      <div id="listaContasFixas" class="listaContasFixasCompleta"></div>
+
+      <section class="novaContaSecao">
+        <h2>Nova conta fixa</h2>
+        <form id="formNovaContaFixa" class="formNovaConta">
+          <input type="text" id="nomeContaFixa" placeholder="Ex.: Aluguel, Luz, Internet" autocomplete="off" required />
+          <input type="number" id="valorContaFixa" placeholder="Valor (ex.: 150.00)" step="0.01" min="0" required />
+          <input type="number" id="diaContaFixa" placeholder="Dia do vencimento (1-31)" min="1" max="31" required />
+          <select id="contaPagamentoFixa"></select>
+          <button type="submit">Adicionar conta fixa</button>
+        </form>
+      </section>
+    </div>
+
+    <!-- VIEW: Calendário -->
+    <div id="viewCalendario" class="view" hidden>
+      <div class="cabecalhoView">
+        <button class="voltar" data-ir="inicio">← voltar</button>
+        <h2 class="tituloView">Calendário</h2>
+      </div>
+
+      <div class="alternadorModo">
+        <button class="botaoModo ativo" data-modo="mes">Mês</button>
+        <button class="botaoModo" data-modo="semana">Semana</button>
+      </div>
+
+      <!-- modo mês -->
+      <div id="modoMes" class="modoCalendario">
+        <div class="navMes">
+          <button id="mesAnterior" class="setaMes">‹</button>
+          <div id="rotuloMes" class="rotuloMes">—</div>
+          <button id="mesSeguinte" class="setaMes">›</button>
+        </div>
+
+        <div class="gradeSemana">
+          <span>D</span><span>S</span><span>T</span><span>Q</span><span>Q</span><span>S</span><span>S</span>
+        </div>
+        <div id="gradeCalendario" class="gradeCalendario"></div>
+
+        <div id="detalheDia" class="detalheDia" hidden></div>
+      </div>
+
+      <!-- modo semana -->
+      <div id="modoSemana" class="modoCalendario" hidden>
+        <div class="navMes">
+          <button id="semanaAnterior" class="setaMes">‹</button>
+          <div id="rotuloSemana" class="rotuloMes">—</div>
+          <button id="semanaSeguinte" class="setaMes">›</button>
+        </div>
+
+        <div id="listaSemana" class="listaSemana"></div>
+      </div>
+
+      <div class="legendaCalendario">
+        <span><i class="pontoEntrada"></i> entrada</span>
+        <span><i class="pontoSaida"></i> saída</span>
+        <span><i class="pontoVencimento"></i> vencimento</span>
+      </div>
+    </div>
+
+    <!-- VIEW: Cartões -->
+    <div id="viewCartoes" class="view" hidden>
+      <div class="cabecalhoView">
+        <button class="voltar" data-ir="inicio">← voltar</button>
+        <h2 class="tituloView">Cartões</h2>
+      </div>
+
+      <div id="listaCartoes" class="listaContasFixasCompleta"></div>
+
+      <section class="novaContaSecao">
+        <h2>Novo cartão</h2>
+        <form id="formNovoCartao" class="formNovaConta">
+          <input type="text" id="nomeCartao" placeholder="Ex.: Nubank, Inter" autocomplete="off" required />
+          <input type="number" id="limiteCartao" placeholder="Limite (ex.: 2000.00)" step="0.01" min="0" required />
+          <input type="number" id="fechamentoCartao" placeholder="Dia de fechamento (1-31)" min="1" max="31" required />
+          <input type="number" id="vencimentoCartao" placeholder="Dia de vencimento (1-31)" min="1" max="31" required />
+          <select id="contaPagamentoCartao"></select>
+          <button type="submit">Adicionar cartão</button>
+        </form>
+      </section>
+    </div>
+
+    <!-- VIEW: Fatura -->
+    <div id="viewFatura" class="view" hidden>
+      <div class="cabecalhoView">
+        <button class="voltar" data-ir="cartoes">← voltar</button>
+        <h2 class="tituloView" id="tituloFatura">Fatura</h2>
+      </div>
+
+      <div class="hero heroFatura">
+        <div class="eyebrow">Fatura do mês</div>
+        <h1 id="totalFatura">R$ 0,00</h1>
+        <div id="statusFaturaTexto" class="statusFaturaTexto">—</div>
+        <button id="botaoPagarFatura" class="botaoPagarFaturaGrande" hidden>Marcar fatura como paga</button>
+      </div>
+
+      <section>
+        <h2>Compras dessa fatura</h2>
+        <div id="listaComprasFatura" class="listaHistorico"></div>
+      </section>
+    </div>
+
+    <!-- VIEW: Orçamento -->
+    <div id="viewOrcamento" class="view" hidden>
+      <div class="cabecalhoView">
+        <button class="voltar" data-ir="inicio">← voltar</button>
+        <h2 class="tituloView">Orçamento</h2>
+        <button class="linkBotao linkCalendario" data-ir="analise">📊 análise</button>
+      </div>
+
+      <div id="listaOrcamento" class="listaContasFixasCompleta"></div>
+
+      <section class="novaContaSecao">
+        <h2>Definir limite</h2>
+        <form id="formOrcamento" class="formNovaConta">
+          <select id="categoriaOrcamento"></select>
+          <input type="number" id="limiteOrcamento" placeholder="Limite mensal (ex.: 400.00)" step="0.01" min="0" required />
+          <button type="submit">Salvar limite</button>
+        </form>
+      </section>
+    </div>
+
+    <!-- VIEW: Análise -->
+    <div id="viewAnalise" class="view" hidden>
+      <div class="cabecalhoView">
+        <button class="voltar" data-ir="orcamento">← voltar</button>
+        <h2 class="tituloView">Análise</h2>
+      </div>
+
+      <section>
+        <h2>Gastos por categoria (este mês)</h2>
+        <div id="graficoAnalise" class="graficoAnalise"></div>
+      </section>
+
+      <section>
+        <h2>Sugestões</h2>
+        <div id="sugestoesAnalise" class="listaHistorico"></div>
+      </section>
+    </div>
+
+    <!-- VIEW: Metas -->
+    <div id="viewMetas" class="view" hidden>
+      <div class="cabecalhoView">
+        <button class="voltar" data-ir="inicio">← voltar</button>
+        <h2 class="tituloView">Metas</h2>
+      </div>
+
+      <div id="listaMetas" class="listaContasFixasCompleta"></div>
+
+      <section class="novaContaSecao">
+        <h2>Nova meta</h2>
+        <form id="formNovaMeta" class="formNovaConta">
+          <input type="text" id="nomeMeta" placeholder="Ex.: Viagem, Reserva de emergência" autocomplete="off" required />
+          <input type="number" id="valorAlvoMeta" placeholder="Valor da meta (ex.: 3000.00)" step="0.01" min="0" required />
+          <input type="text" id="prazoMeta" placeholder="Prazo (ex.: dez/2026) — opcional" autocomplete="off" />
+          <button type="submit">Criar meta</button>
+        </form>
+      </section>
+    </div>
+
+    <nav class="navInferior">
+      <div class="navItem ativo" data-ir="inicio" data-nav="inicio">
+        <span>🏠</span>
+        <small>Início</small>
+      </div>
+      <div class="navItem" data-ir="contas" data-nav="contas">
+        <span>🏦</span>
+        <small>Contas</small>
+      </div>
+      <div class="navItem" data-ir="calendario" data-nav="calendario">
+        <span>📅</span>
+        <small>Calendário</small>
+      </div>
+      <div class="navItem" data-ir="cartoes" data-nav="cartoes">
+        <span>💳</span>
+        <small>Cartões</small>
+      </div>
+    </nav>
+  </div>
+
+  <script>
+    const MONE_SUPABASE_URL = "https://eqnrepmsboxyqnoytcok.supabase.co";
+    const MONE_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVxbnJlcG1zYm94eXFub3l0Y29rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg1NTc2NjEsImV4cCI6MjEwNDEzMzY2MX0.TMDFIobfnzEoGs9CQW0CmP6RaARrM3efouwk0d5K9as";
+  </script>
+  <script src="app.js"></script>
+</body>
+</html>
