@@ -352,6 +352,22 @@
           <button type="submit">Adicionar conta fixa</button>
         </form>
       </section>
+
+      <section class="novaContaSecao">
+        <h2>📊 Contas variáveis</h2>
+        <p class="zonaPerigoTexto" style="color: var(--verde-medio); background: var(--verde-claro); padding: 10px 12px; border-radius: 10px;">
+          Despesas sem dia fixo ou que não se repetem todo mês (ex.: IPVA, um conserto).
+        </p>
+        <div id="listaContasVariaveis" class="listaContasFixasCompleta"></div>
+        <form id="formNovaContaVariavel" class="formNovaConta" style="margin-top: 12px;">
+          <input type="text" id="nomeContaVariavel" placeholder="Ex.: IPVA, Conserto do carro" autocomplete="off" required />
+          <input type="number" id="valorContaVariavel" placeholder="Valor (ex.: 250.00)" step="0.01" min="0" required />
+          <input type="text" id="categoriaContaVariavel" placeholder="Categoria (ex.: Transporte)" autocomplete="off" required />
+          <input type="date" id="dataContaVariavel" placeholder="Data prevista (opcional)" />
+          <select id="contaPagamentoVariavel"></select>
+          <button type="submit">Adicionar conta variável</button>
+        </form>
+      </section>
     </div>
 
     <!-- VIEW: Calendário -->
