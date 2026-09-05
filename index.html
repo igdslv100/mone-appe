@@ -105,7 +105,7 @@
         <div class="cardProjecao">
           <div class="projecaoLegenda">Você deve fechar o mês com</div>
           <div class="projecaoValor" id="projecaoValor">R$ 0,00</div>
-          <div class="projecaoLegenda">disponível, considerando contas fixas e faturas ainda em aberto</div>
+          <div class="projecaoLegenda">disponível, considerando contas/faturas em aberto e receitas fixas que ainda vão entrar</div>
         </div>
         <div id="alertaProjecao" class="alertaProjecao" hidden></div>
       </section>
@@ -430,8 +430,14 @@
         <h2 class="tituloView" id="tituloFatura">Fatura</h2>
       </div>
 
+      <div class="navMes">
+        <button id="faturaMesAnterior" class="setaMes">‹</button>
+        <div id="faturaRotuloMes" class="rotuloMes">—</div>
+        <button id="faturaMesSeguinte" class="setaMes">›</button>
+      </div>
+
       <div class="hero heroFatura">
-        <div class="eyebrow">Fatura do mês</div>
+        <div class="eyebrow" id="faturaEyebrow">Fatura do mês</div>
         <h1 id="totalFatura">R$ 0,00</h1>
         <div id="statusFaturaTexto" class="statusFaturaTexto">—</div>
         <button id="botaoPagarFatura" class="botaoPagarFaturaGrande" hidden>Marcar fatura como paga</button>
@@ -440,6 +446,20 @@
       <section>
         <h2>Compras dessa fatura</h2>
         <div id="listaComprasFatura" class="listaHistorico"></div>
+      </section>
+
+      <section class="novaContaSecao">
+        <h2>➕ Registrar compra antiga (já em andamento)</h2>
+        <p class="zonaPerigoTexto" style="color: var(--verde-medio); background: var(--verde-claro); padding: 10px 12px; border-radius: 10px;">
+          Pra uma compra que você já vinha pagando antes de usar o MONE — só as parcelas que ainda faltam entram nas próximas faturas.
+        </p>
+        <form id="formCompraAntiga" class="formNovaConta">
+          <input type="text" id="descricaoCompraAntiga" placeholder="Descrição (ex.: TV, Notebook)" autocomplete="off" required />
+          <input type="text" id="categoriaCompraAntiga" placeholder="Categoria (ex.: Compras)" autocomplete="off" required />
+          <input type="number" id="valorParcelaCompraAntiga" placeholder="Valor de cada parcela (ex.: 150.00)" step="0.01" min="0" required />
+          <input type="number" id="parcelasRestantesCompraAntiga" placeholder="Quantas parcelas ainda faltam" min="1" required />
+          <button type="submit">Adicionar compra antiga</button>
+        </form>
       </section>
 
       <section>

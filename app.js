@@ -648,7 +648,16 @@ function calcularProjecaoAtual(contexto) {
   const { saldoDisponivel } = calcularSaldoDisponivel(contexto);
   const pendentes = contasFixasPendentesDoMes(contexto);
   const somaPendentes = pendentes.reduce((soma, item) => soma + item.cf.valor, 0);
-  return { saldoDisponivel, pendentes, somaPendentes, projecao: saldoDisponivel - somaPendentes };
+  const receitasPendentes = receitasFixasPendentesDoMes(contexto);
+  const somaReceitasPendentes = receitasPendentes.reduce((soma, item) => soma + item.rf.valor, 0);
+  return {
+    saldoDisponivel,
+    pendentes,
+    somaPendentes,
+    receitasPendentes,
+    somaReceitasPendentes,
+    projecao: saldoDisponivel + somaReceitasPendentes - somaPendentes,
+  };
 }
 
 // ---------- projeção detalhada ----------
@@ -741,7 +750,7 @@ function calcularProjecaoDetalhada(contexto, periodo) {
 }
 
 function renderProjecao(contexto) {
-  const { pendentes, projecao } = calcularProjecaoAtual(contexto);
+  const { pendentes, projecao, somaReceitasPendentes } = calcularProjecaoAtual(contexto);
 
   document.getElementById("projecaoValor").textContent = formatarMoeda(projecao);
 
@@ -758,10 +767,14 @@ function renderProjecao(contexto) {
     .map((item) => `<li>${escapeHtml(item.cf.nome)} — dia ${item.cf.dia} · ${formatarMoeda(item.cf.valor)}${item.status === "atrasada" ? " (atrasada)" : ""}</li>`)
     .join("");
 
+  const textoReceitas = somaReceitasPendentes > 0
+    ? ` (já contando ${formatarMoeda(somaReceitasPendentes)} de receitas fixas que ainda vão entrar)`
+    : "";
+
   alerta.hidden = false;
   alerta.innerHTML = `
     <div class="alertaProjecaoTitulo">⚠️ Atenção: pode faltar ${formatarMoeda(falta)} até o fim do mês</div>
-    <div class="alertaProjecaoTexto">Suas contas ainda pendentes somam mais do que você tem disponível. Prioridades:</div>
+    <div class="alertaProjecaoTexto">Suas contas ainda pendentes somam mais do que você tem disponível${textoReceitas}. Prioridades:</div>
     <ul class="alertaProjecaoLista">${prioridades}</ul>
   `;
 }
@@ -1182,12 +1195,21 @@ function renderCartoes(contexto) {
     .join("");
 }
 
+let mesAnoFaturaVisualizada = null;
+
 function renderFatura(contexto) {
   if (!cartaoAtualId) return;
   const cartao = contexto.cartoes.find((c) => c.id === cartaoAtualId);
   if (!cartao) return;
 
-  const mesAno = mesAnoDe(new Date());
+  const mesAnoAtual = mesAnoDe(new Date());
+  if (!mesAnoFaturaVisualizada) mesAnoFaturaVisualizada = mesAnoAtual;
+  const mesAno = mesAnoFaturaVisualizada;
+
+  const [ano, mes] = mesAno.split("-").map(Number);
+  document.getElementById("faturaRotuloMes").textContent = `${NOMES_MES[mes - 1]} ${ano}`;
+  document.getElementById("faturaEyebrow").textContent = mesAno === mesAnoAtual ? "Fatura do mês" : mesAno < mesAnoAtual ? "Fatura passada" : "Fatura futura";
+
   const itens = comprasDaFatura(cartao.id, mesAno, contexto.compras, cartao);
   const total = itens.reduce((soma, item) => soma + item.compra.valorParcela, 0);
   const status = statusFatura(cartao, mesAno, contexto.pagamentosFaturas, new Date());
@@ -1197,7 +1219,7 @@ function renderFatura(contexto) {
   document.getElementById("statusFaturaTexto").textContent = `${ROTULO_STATUS[status]} · vence dia ${cartao.diaVencimento}`;
 
   const botaoPagar = document.getElementById("botaoPagarFatura");
-  botaoPagar.hidden = status === "paga" || total <= 0;
+  botaoPagar.hidden = status === "paga" || total <= 0 || mesAno > mesAnoAtual;
 
   const listaCompras = document.getElementById("listaComprasFatura");
   if (itens.length === 0) {
@@ -1217,20 +1239,21 @@ function renderFatura(contexto) {
       .join("");
   }
 
+  const statusAtual = statusFatura(cartao, mesAnoAtual, contexto.pagamentosFaturas, new Date());
   const proximas = proximasFaturas(cartao, contexto, 4);
   document.getElementById("listaProximasFaturas").innerHTML = proximas
     .map((f, i) => {
-      const [ano, mes] = f.mesAno.split("-").map(Number);
-      const rotuloMes = `${NOMES_MES[mes - 1]} ${ano}`;
-      const situacao = i === 0 ? ROTULO_STATUS[status] : f.paga ? "Paga" : "Prevista";
+      const [anoCard, mesCard] = f.mesAno.split("-").map(Number);
+      const rotuloMes = `${NOMES_MES[mesCard - 1]} ${anoCard}`;
+      const situacao = i === 0 ? ROTULO_STATUS[statusAtual] : f.paga ? "Paga" : "Prevista";
       return `
-        <div class="cardConta">
+        <button type="button" class="cardConta cardCartaoClicavel" data-ver-fatura-mes="${f.mesAno}">
           <div class="cardContaTopo">
             <div class="cardContaNome">${rotuloMes}</div>
             <div class="cardContaTag">${situacao}</div>
           </div>
           <div class="cardContaSaldo">${formatarMoeda(f.total)}</div>
-        </div>
+        </button>
       `;
     })
     .join("");
@@ -2789,8 +2812,62 @@ function iniciarApp(dadosIniciais) {
     const botao = evento.target.closest("[data-fatura]");
     if (!botao) return;
     cartaoAtualId = botao.dataset.fatura;
+    mesAnoFaturaVisualizada = null;
     renderFatura(contexto);
     irPara("fatura");
+  });
+
+  // navegação da fatura entre meses (passada/futura)
+  document.getElementById("faturaMesAnterior").addEventListener("click", () => {
+    mesAnoFaturaVisualizada = addMesesAMesAno(mesAnoFaturaVisualizada || mesAnoDe(new Date()), -1);
+    renderFatura(contexto);
+  });
+  document.getElementById("faturaMesSeguinte").addEventListener("click", () => {
+    mesAnoFaturaVisualizada = addMesesAMesAno(mesAnoFaturaVisualizada || mesAnoDe(new Date()), 1);
+    renderFatura(contexto);
+  });
+
+  // pular direto pra uma fatura futura clicada na lista de próximas faturas
+  document.getElementById("listaProximasFaturas").addEventListener("click", (evento) => {
+    const botao = evento.target.closest("[data-ver-fatura-mes]");
+    if (!botao) return;
+    mesAnoFaturaVisualizada = botao.dataset.verFaturaMes;
+    renderFatura(contexto);
+  });
+
+  // registrar compra antiga (parcelas restantes de algo comprado antes do app)
+  const formCompraAntiga = document.getElementById("formCompraAntiga");
+  formCompraAntiga.addEventListener("submit", async (evento) => {
+    evento.preventDefault();
+    const cartao = contexto.cartoes.find((c) => c.id === cartaoAtualId);
+    if (!cartao) return;
+
+    const descricao = document.getElementById("descricaoCompraAntiga").value.trim();
+    const categoria = document.getElementById("categoriaCompraAntiga").value.trim();
+    const valorParcela = parseFloat(document.getElementById("valorParcelaCompraAntiga").value);
+    const parcelasRestantes = parseInt(document.getElementById("parcelasRestantesCompraAntiga").value, 10);
+    if (!descricao || !categoria || isNaN(valorParcela) || isNaN(parcelasRestantes) || parcelasRestantes < 1) return;
+
+    const novaCompra = {
+      id: gerarId(),
+      descricao,
+      valorTotal: Math.round(valorParcela * parcelasRestantes * 100) / 100,
+      parcelas: parcelasRestantes,
+      valorParcela,
+      cartaoId: cartao.id,
+      categoria,
+      dataCompra: new Date().toISOString(),
+    };
+
+    contexto.compras = [novaCompra, ...contexto.compras];
+    await inserirLinha("compras_cartao", {
+      id: novaCompra.id, user_id: usuarioId, cartao_id: novaCompra.cartaoId, descricao: novaCompra.descricao,
+      valor_total: novaCompra.valorTotal, parcelas: novaCompra.parcelas, valor_parcela: novaCompra.valorParcela,
+      categoria: novaCompra.categoria, data_compra: novaCompra.dataCompra,
+    });
+
+    atualizarTudo();
+    formCompraAntiga.reset();
   });
 
   // marcar fatura como paga
@@ -2798,7 +2875,7 @@ function iniciarApp(dadosIniciais) {
     const cartao = contexto.cartoes.find((c) => c.id === cartaoAtualId);
     if (!cartao) return;
 
-    const mesAno = mesAnoDe(new Date());
+    const mesAno = mesAnoFaturaVisualizada || mesAnoDe(new Date());
     if (faturaEstaPaga(cartao.id, mesAno, contexto.pagamentosFaturas)) return;
 
     const total = totalFatura(cartao.id, mesAno, contexto.compras, cartao);
