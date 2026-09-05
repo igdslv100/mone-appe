@@ -5,6 +5,7 @@ const CHAVE_ULTIMO_CARTAO = "mone_ultimo_cartao";
 
 const PALAVRAS_PAGAMENTO = ["paguei", "pago", "quitei"];
 const PALAVRAS_META = ["guardei", "depositei", "poupei"];
+const PALAVRAS_TRANSFERENCIA = ["transferi", "transferir", "transferência", "transferencia"];
 const NOMES_MES = [
   "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
   "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
@@ -53,7 +54,7 @@ async function atualizarLinha(tabela, id, campos) {
 }
 
 async function carregarDadosDoUsuario() {
-  const [contas, movimentacoes, contasFixas, pagamentos, cartoes, compras, pagamentosFaturas, orcamentos, metas, contribuicoesMetas] = await Promise.all([
+  const [contas, movimentacoes, contasFixas, pagamentos, cartoes, compras, pagamentosFaturas, orcamentos, metas, contribuicoesMetas, transferencias, receitasFixas, recebimentos] = await Promise.all([
     supabaseClient.from("contas").select("*"),
     supabaseClient.from("movimentacoes").select("*"),
     supabaseClient.from("contas_fixas").select("*"),
@@ -64,6 +65,9 @@ async function carregarDadosDoUsuario() {
     supabaseClient.from("orcamentos").select("*"),
     supabaseClient.from("metas").select("*"),
     supabaseClient.from("contribuicoes_metas").select("*"),
+    supabaseClient.from("transferencias").select("*"),
+    supabaseClient.from("receitas_fixas").select("*"),
+    supabaseClient.from("recebimentos_fixos").select("*"),
   ]);
 
   let contasMapeadas = (contas.data || []).map((r) => ({ id: r.id, nome: r.nome, tipo: r.tipo }));
@@ -77,14 +81,14 @@ async function carregarDadosDoUsuario() {
   return {
     contas: contasMapeadas,
     movimentacoes: (movimentacoes.data || []).map((r) => ({
-      id: r.id, contaId: r.conta_id, valor: Number(r.valor), tipo: r.tipo, categoria: r.categoria, data: r.data, descricao: r.descricao,
+      id: r.id, contaId: r.conta_id, valor: Number(r.valor), tipo: r.tipo, categoria: r.categoria, data: r.data, descricao: r.descricao, cartaoId: r.cartao_id,
     })),
     contasFixas: (contasFixas.data || []).map((r) => ({
       id: r.id, nome: r.nome, valor: Number(r.valor), dia: r.dia, categoria: r.categoria, contaId: r.conta_id, repeticao: r.repeticao,
     })),
     pagamentos: (pagamentos.data || []).map((r) => ({ contaFixaId: r.conta_fixa_id, mesAno: r.mes_ano, movimentacaoId: r.movimentacao_id })),
     cartoes: (cartoes.data || []).map((r) => ({
-      id: r.id, nome: r.nome, limite: Number(r.limite), diaFechamento: r.dia_fechamento, diaVencimento: r.dia_vencimento, contaId: r.conta_id,
+      id: r.id, nome: r.nome, instituicao: r.instituicao, limite: Number(r.limite), diaFechamento: r.dia_fechamento, diaVencimento: r.dia_vencimento, contaId: r.conta_id,
     })),
     compras: (compras.data || []).map((r) => ({
       id: r.id, cartaoId: r.cartao_id, descricao: r.descricao, valorTotal: Number(r.valor_total), parcelas: r.parcelas,
@@ -92,8 +96,15 @@ async function carregarDadosDoUsuario() {
     })),
     pagamentosFaturas: (pagamentosFaturas.data || []).map((r) => ({ cartaoId: r.cartao_id, mesAno: r.mes_ano, movimentacaoId: r.movimentacao_id })),
     orcamentos: (orcamentos.data || []).map((r) => ({ id: r.id, categoria: r.categoria, limite: Number(r.limite) })),
-    metas: (metas.data || []).map((r) => ({ id: r.id, nome: r.nome, valorAlvo: Number(r.valor_alvo), valorAtual: Number(r.valor_atual), prazo: r.prazo })),
+    metas: (metas.data || []).map((r) => ({ id: r.id, nome: r.nome, valorAlvo: Number(r.valor_alvo), valorAtual: Number(r.valor_atual), prazo: r.prazo, contaId: r.conta_id })),
     contribuicoesMetas: (contribuicoesMetas.data || []).map((r) => ({ id: r.id, metaId: r.meta_id, valor: Number(r.valor), data: r.data })),
+    transferencias: (transferencias.data || []).map((r) => ({
+      id: r.id, contaOrigemId: r.conta_origem_id, contaDestinoId: r.conta_destino_id, valor: Number(r.valor), data: r.data, descricao: r.descricao,
+    })),
+    receitasFixas: (receitasFixas.data || []).map((r) => ({
+      id: r.id, nome: r.nome, valor: Number(r.valor), dia: r.dia, categoria: r.categoria, contaId: r.conta_id, repeticao: r.repeticao,
+    })),
+    recebimentos: (recebimentos.data || []).map((r) => ({ receitaFixaId: r.receita_fixa_id, mesAno: r.mes_ano, movimentacaoId: r.movimentacao_id })),
   };
 }
 
@@ -171,6 +182,50 @@ function extrairConta(textoMinusculo, contas) {
   return contas[0].id;
 }
 
+// ---------- transferência entre contas ----------
+
+async function registrarTransferencia(contaOrigemId, contaDestinoId, valor, data, descricao, contexto) {
+  const transferencia = {
+    id: gerarId(),
+    contaOrigemId,
+    contaDestinoId,
+    valor,
+    data: data || new Date().toISOString(),
+    descricao: descricao || "",
+  };
+
+  contexto.transferencias = [transferencia, ...contexto.transferencias];
+  await inserirLinha("transferencias", {
+    id: transferencia.id, user_id: usuarioId, conta_origem_id: contaOrigemId, conta_destino_id: contaDestinoId,
+    valor, data: transferencia.data, descricao: transferencia.descricao,
+  });
+
+  return transferencia;
+}
+
+function tentarRegistrarTransferencia(textoOriginal, textoMinusculo, contexto) {
+  const ehTransferencia = PALAVRAS_TRANSFERENCIA.some((p) => textoMinusculo.includes(p));
+  if (!ehTransferencia) return null;
+
+  if (contexto.contas.length < 2) return { erro: "Você precisa ter pelo menos duas contas cadastradas pra transferir entre elas." };
+
+  const valor = extrairValor(textoMinusculo);
+  if (valor === null) return { erro: "Não consegui achar o valor da transferência 🤔" };
+
+  const contasEncontradas = contexto.contas.filter((c) => textoMinusculo.includes(c.nome.toLowerCase()));
+  if (contasEncontradas.length < 2) {
+    return { erro: "Preciso saber a conta de origem e a de destino — tenta algo como \"transferi R$100 do Nubank pra poupança\"." };
+  }
+
+  const posicoes = contasEncontradas.map((c) => ({ conta: c, posicao: textoMinusculo.indexOf(c.nome.toLowerCase()) })).sort((a, b) => a.posicao - b.posicao);
+  const origem = posicoes[0].conta;
+  const destino = posicoes[1].conta;
+
+  if (origem.id === destino.id) return { erro: "A conta de origem e destino não podem ser a mesma." };
+
+  return { origem, destino, valor };
+}
+
 function interpretarFrase(textoOriginal, contas) {
   const texto = textoOriginal.trim();
   const textoMinusculo = texto.toLowerCase();
@@ -186,10 +241,18 @@ function interpretarFrase(textoOriginal, contas) {
 
 // ---------- cálculos ----------
 
-function saldoDaConta(contaId, movimentacoes) {
-  return movimentacoes
+function saldoDaConta(contaId, movimentacoes, transferencias = []) {
+  const saldoMovimentacoes = movimentacoes
     .filter((m) => m.contaId === contaId)
     .reduce((soma, m) => soma + (m.tipo === "entrada" ? m.valor : -m.valor), 0);
+
+  const saldoTransferencias = transferencias.reduce((soma, t) => {
+    if (t.contaOrigemId === contaId) return soma - t.valor;
+    if (t.contaDestinoId === contaId) return soma + t.valor;
+    return soma;
+  }, 0);
+
+  return saldoMovimentacoes + saldoTransferencias;
 }
 
 function nomeDaConta(contaId, contas) {
@@ -241,6 +304,72 @@ async function pagarContaFixa(contaFixa, mesAno, contexto) {
   await inserirLinha("pagamentos_fixas", {
     user_id: usuarioId, conta_fixa_id: pagamento.contaFixaId, mes_ano: pagamento.mesAno, movimentacao_id: pagamento.movimentacaoId,
   });
+}
+
+// ---------- receitas fixas ----------
+
+function receitaEstaRecebida(receitaFixaId, mesAno, recebimentos) {
+  return recebimentos.some((r) => r.receitaFixaId === receitaFixaId && r.mesAno === mesAno);
+}
+
+function statusReceitaFixa(receitaFixa, mesAno, recebimentos, hoje) {
+  if (receitaEstaRecebida(receitaFixa.id, mesAno, recebimentos)) return "paga";
+  const [ano, mes] = mesAno.split("-").map(Number);
+  const diaLimite = Math.min(receitaFixa.dia, diasNoMes(ano, mes - 1));
+  const vencimento = new Date(ano, mes - 1, diaLimite);
+  return hoje > vencimento ? "atrasada" : "pendente";
+}
+
+async function receberReceitaFixa(receitaFixa, mesAno, contexto) {
+  const nova = {
+    id: gerarId(),
+    valor: receitaFixa.valor,
+    tipo: "entrada",
+    categoria: receitaFixa.categoria || "Renda",
+    data: new Date().toISOString(),
+    contaId: receitaFixa.contaId,
+    descricao: `${receitaFixa.nome} (receita fixa)`,
+  };
+
+  contexto.movimentacoes = [nova, ...contexto.movimentacoes];
+  await inserirLinha("movimentacoes", {
+    id: nova.id, user_id: usuarioId, conta_id: nova.contaId, valor: nova.valor, tipo: nova.tipo,
+    categoria: nova.categoria, data: nova.data, descricao: nova.descricao,
+  });
+
+  const recebimento = { receitaFixaId: receitaFixa.id, mesAno, movimentacaoId: nova.id };
+  contexto.recebimentos = [...contexto.recebimentos, recebimento];
+  await inserirLinha("recebimentos_fixos", {
+    user_id: usuarioId, receita_fixa_id: recebimento.receitaFixaId, mes_ano: recebimento.mesAno, movimentacao_id: recebimento.movimentacaoId,
+  });
+}
+
+function tentarReceberReceitaFixaPorTexto(textoMinusculo, contexto) {
+  const contemRecebimento = PALAVRAS_ENTRADA.some((p) => textoMinusculo.includes(p));
+  if (!contemRecebimento) return null;
+
+  const mesAno = mesAnoDe(new Date());
+  const receitaFixa = contexto.receitasFixas.find((rf) => {
+    if (receitaEstaRecebida(rf.id, mesAno, contexto.recebimentos)) return false;
+    return textoMinusculo.includes(rf.nome.toLowerCase());
+  });
+
+  if (!receitaFixa) return null;
+
+  receberReceitaFixa(receitaFixa, mesAno, contexto);
+  return receitaFixa;
+}
+
+function receitasFixasPendentesDoMes(contexto) {
+  const hoje = new Date();
+  const mesAno = mesAnoDe(hoje);
+  return contexto.receitasFixas
+    .map((rf) => ({ rf, status: statusReceitaFixa(rf, mesAno, contexto.recebimentos, hoje) }))
+    .filter((item) => item.status !== "paga")
+    .sort((a, b) => {
+      if (a.status !== b.status) return a.status === "atrasada" ? -1 : 1;
+      return a.rf.dia - b.rf.dia;
+    });
 }
 
 // ---------- cartões e faturas ----------
@@ -307,12 +436,13 @@ async function pagarFatura(cartao, mesAno, total, contexto) {
     data: new Date().toISOString(),
     contaId: cartao.contaId,
     descricao: `Fatura ${cartao.nome} (${mesAno})`,
+    cartaoId: cartao.id,
   };
 
   contexto.movimentacoes = [nova, ...contexto.movimentacoes];
   await inserirLinha("movimentacoes", {
     id: nova.id, user_id: usuarioId, conta_id: nova.contaId, valor: nova.valor, tipo: nova.tipo,
-    categoria: nova.categoria, data: nova.data, descricao: nova.descricao,
+    categoria: nova.categoria, data: nova.data, descricao: nova.descricao, cartao_id: nova.cartaoId,
   });
 
   const pagamento = { cartaoId: cartao.id, mesAno, movimentacaoId: nova.id };
@@ -320,6 +450,39 @@ async function pagarFatura(cartao, mesAno, total, contexto) {
   await inserirLinha("pagamentos_faturas", {
     user_id: usuarioId, cartao_id: pagamento.cartaoId, mes_ano: pagamento.mesAno, movimentacao_id: pagamento.movimentacaoId,
   });
+}
+
+function limiteUsadoCartao(cartao, contexto) {
+  const mesAnoAtual = mesAnoDe(new Date());
+  let usado = 0;
+
+  contexto.compras
+    .filter((c) => c.cartaoId === cartao.id)
+    .forEach((compra) => {
+      const inicial = mesAnoInicialCompra(compra, cartao.diaFechamento);
+      for (let i = 0; i < compra.parcelas; i++) {
+        const mesAnoParcela = addMesesAMesAno(inicial, i);
+        const jaFoiPaga = mesAnoParcela < mesAnoAtual && faturaEstaPaga(cartao.id, mesAnoParcela, contexto.pagamentosFaturas);
+        if (!jaFoiPaga) usado += compra.valorParcela;
+      }
+    });
+
+  return usado;
+}
+
+function proximasFaturas(cartao, contexto, quantidade = 4) {
+  const hoje = new Date();
+  const meses = [];
+  for (let i = 0; i < quantidade; i++) {
+    const data = new Date(hoje.getFullYear(), hoje.getMonth() + i, 1);
+    meses.push(mesAnoDe(data));
+  }
+
+  return meses.map((mesAno) => ({
+    mesAno,
+    total: totalFatura(cartao.id, mesAno, contexto.compras, cartao),
+    paga: faturaEstaPaga(cartao.id, mesAno, contexto.pagamentosFaturas),
+  }));
 }
 
 function totalFaturasEmAberto(contexto) {
@@ -481,11 +644,104 @@ function contasFixasPendentesDoMes(contexto) {
     });
 }
 
-function renderProjecao(contexto) {
+function calcularProjecaoAtual(contexto) {
   const { saldoDisponivel } = calcularSaldoDisponivel(contexto);
   const pendentes = contasFixasPendentesDoMes(contexto);
   const somaPendentes = pendentes.reduce((soma, item) => soma + item.cf.valor, 0);
-  const projecao = saldoDisponivel - somaPendentes;
+  return { saldoDisponivel, pendentes, somaPendentes, projecao: saldoDisponivel - somaPendentes };
+}
+
+// ---------- projeção detalhada ----------
+
+function gerarEventosFuturos(contexto, hoje, dataFim) {
+  const eventos = [];
+  for (let mesOffset = 0; mesOffset <= 6; mesOffset++) {
+    const dataMes = new Date(hoje.getFullYear(), hoje.getMonth() + mesOffset, 1);
+    if (dataMes > dataFim) break;
+    const mesAno = mesAnoDe(dataMes);
+    const totalDiasMes = diasNoMes(dataMes.getFullYear(), dataMes.getMonth());
+
+    contexto.contasFixas.forEach((cf) => {
+      const dia = Math.min(cf.dia, totalDiasMes);
+      const dataVenc = new Date(dataMes.getFullYear(), dataMes.getMonth(), dia);
+      if (dataVenc >= hoje && dataVenc <= dataFim && !estaPaga(cf.id, mesAno, contexto.pagamentos)) {
+        eventos.push({ data: dataVenc, valor: -cf.valor, label: cf.nome, tipo: "conta fixa" });
+      }
+    });
+
+    contexto.receitasFixas.forEach((rf) => {
+      const dia = Math.min(rf.dia, totalDiasMes);
+      const dataReceb = new Date(dataMes.getFullYear(), dataMes.getMonth(), dia);
+      if (dataReceb >= hoje && dataReceb <= dataFim && !receitaEstaRecebida(rf.id, mesAno, contexto.recebimentos)) {
+        eventos.push({ data: dataReceb, valor: rf.valor, label: rf.nome, tipo: "receita fixa" });
+      }
+    });
+
+    contexto.cartoes.forEach((cartao) => {
+      const dia = Math.min(cartao.diaVencimento, totalDiasMes);
+      const dataVenc = new Date(dataMes.getFullYear(), dataMes.getMonth(), dia);
+      const total = totalFatura(cartao.id, mesAno, contexto.compras, cartao);
+      if (dataVenc >= hoje && dataVenc <= dataFim && total > 0 && !faturaEstaPaga(cartao.id, mesAno, contexto.pagamentosFaturas)) {
+        eventos.push({ data: dataVenc, valor: -total, label: `Fatura ${cartao.nome}`, tipo: "fatura" });
+      }
+    });
+  }
+  return eventos.sort((a, b) => a.data - b.data);
+}
+
+function fimDoPeriodo(periodo, hoje) {
+  if (periodo === "semana") {
+    const d = new Date(hoje);
+    d.setDate(d.getDate() + 7);
+    return d;
+  }
+  if (periodo === "30_dias") {
+    const d = new Date(hoje);
+    d.setDate(d.getDate() + 30);
+    return d;
+  }
+  if (periodo === "3_meses") {
+    const d = new Date(hoje);
+    d.setMonth(d.getMonth() + 3);
+    return d;
+  }
+  return new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0);
+}
+
+function calcularProjecaoDetalhada(contexto, periodo) {
+  const hoje = new Date();
+  const dataFim = fimDoPeriodo(periodo, hoje);
+  const { saldoDisponivel } = calcularSaldoDisponivel(contexto);
+  const eventos = gerarEventosFuturos(contexto, hoje, dataFim);
+
+  const totalContasFuturas = eventos.filter((e) => e.tipo === "conta fixa").reduce((s, e) => s + Math.abs(e.valor), 0);
+  const totalFaturasFuturas = eventos.filter((e) => e.tipo === "fatura").reduce((s, e) => s + Math.abs(e.valor), 0);
+  const totalEntradasPrevistas = eventos.filter((e) => e.tipo === "receita fixa").reduce((s, e) => s + e.valor, 0);
+
+  const mesesNoPeriodo = Math.max(1, (dataFim - hoje) / (1000 * 60 * 60 * 24 * 30));
+  const totalMetas = contexto.metas.reduce((s, m) => {
+    const sugestao = sugestaoMensalMeta(m);
+    return s + (sugestao ? sugestao * mesesNoPeriodo : 0);
+  }, 0);
+
+  const saldoProjetado = saldoDisponivel + totalEntradasPrevistas - totalContasFuturas - totalFaturasFuturas - totalMetas;
+
+  let saldoCorrente = saldoDisponivel;
+  let dataFalta = null;
+  let faltaValor = 0;
+  eventos.forEach((ev) => {
+    saldoCorrente += ev.valor;
+    if (saldoCorrente < 0 && dataFalta === null) {
+      dataFalta = ev.data;
+      faltaValor = Math.abs(saldoCorrente);
+    }
+  });
+
+  return { dataFim, saldoDisponivel, totalContasFuturas, totalFaturasFuturas, totalEntradasPrevistas, totalMetas, saldoProjetado, eventos, dataFalta, faltaValor };
+}
+
+function renderProjecao(contexto) {
+  const { pendentes, projecao } = calcularProjecaoAtual(contexto);
 
   document.getElementById("projecaoValor").textContent = formatarMoeda(projecao);
 
@@ -510,11 +766,11 @@ function renderProjecao(contexto) {
   `;
 }
 
-function renderSaldoPorConta(contas, movimentacoes) {
+function renderSaldoPorConta(contas, movimentacoes, transferencias) {
   const lista = document.getElementById("listaSaldoContas");
   lista.innerHTML = contas
     .map((conta) => {
-      const saldo = saldoDaConta(conta.id, movimentacoes);
+      const saldo = saldoDaConta(conta.id, movimentacoes, transferencias);
       return `
         <div class="cardSaldoConta">
           <div class="cardSaldoContaNome">${escapeHtml(conta.nome)}</div>
@@ -528,21 +784,48 @@ function renderSaldoPorConta(contas, movimentacoes) {
 const LIMITE_HISTORICO_INICIAL = 5;
 let historicoExpandido = false;
 
-function renderHistorico(movimentacoes, contas) {
+function renderHistorico(contexto) {
+  const { movimentacoes, transferencias, contas } = contexto;
   const lista = document.getElementById("listaHistorico");
   const botaoMais = document.getElementById("toggleHistorico");
 
-  if (movimentacoes.length === 0) {
+  const itensTransferencia = transferencias.map((t) => ({
+    id: t.id,
+    tipo: "transferencia",
+    valor: t.valor,
+    data: t.data,
+    descricao: t.descricao && t.descricao.trim() ? t.descricao : `Transferência entre contas`,
+    contaOrigemId: t.contaOrigemId,
+    contaDestinoId: t.contaDestinoId,
+  }));
+
+  const todosItens = [...movimentacoes, ...itensTransferencia];
+
+  if (todosItens.length === 0) {
     lista.innerHTML = '<p class="vazio">Nada por aqui ainda — registre sua primeira movimentação acima 👆</p>';
     botaoMais.hidden = true;
     return;
   }
 
-  const ordenadas = [...movimentacoes].sort((a, b) => new Date(b.data) - new Date(a.data));
+  const ordenadas = todosItens.sort((a, b) => new Date(b.data) - new Date(a.data));
   const visiveis = historicoExpandido ? ordenadas : ordenadas.slice(0, LIMITE_HISTORICO_INICIAL);
 
   lista.innerHTML = visiveis
     .map((m) => {
+      if (m.tipo === "transferencia") {
+        return `
+          <div class="itemHistorico">
+            <div class="itemIcone">🔄</div>
+            <div class="itemInfo">
+              <div class="itemDescricao">${escapeHtml(m.descricao)}</div>
+              <div class="itemMeta">${escapeHtml(nomeDaConta(m.contaOrigemId, contas))} → ${escapeHtml(nomeDaConta(m.contaDestinoId, contas))} · ${formatarDataCurta(m.data)}</div>
+            </div>
+            <div class="itemValor valorTransferencia">⇄ ${formatarMoeda(m.valor)}</div>
+            <button type="button" class="botaoExcluirItem" data-excluir-transferencia="${m.id}" title="Apagar">✕</button>
+          </div>
+        `;
+      }
+
       const sinal = m.tipo === "entrada" ? "+" : "−";
       const classeValor = m.tipo === "entrada" ? "valorEntrada" : "valorSaida";
       const icone = m.tipo === "entrada" ? "⬆️" : "⬇️";
@@ -568,13 +851,169 @@ function renderHistorico(movimentacoes, contas) {
   }
 }
 
+// ---------- histórico completo: busca, filtros, edição ----------
+
+const filtrosHistorico = { busca: "", periodo: "todos", tipo: "todos", categoria: "todas", contaId: "todas", cartaoId: "todas" };
+let ordemHistoricoDesc = true;
+let itemEmEdicaoId = null;
+
+function itensUnificadosHistorico(contexto) {
+  const itensMovimentacao = contexto.movimentacoes.map((m) => ({ ...m, tipoItem: "movimentacao" }));
+  const itensTransferencia = contexto.transferencias.map((t) => ({
+    id: t.id,
+    tipoItem: "transferencia",
+    tipo: "transferencia",
+    valor: t.valor,
+    data: t.data,
+    descricao: t.descricao && t.descricao.trim() ? t.descricao : "Transferência entre contas",
+    contaOrigemId: t.contaOrigemId,
+    contaDestinoId: t.contaDestinoId,
+  }));
+  return [...itensMovimentacao, ...itensTransferencia];
+}
+
+function dataDentroDoPeriodo(dataIso, periodo) {
+  if (periodo === "todos") return true;
+  const data = new Date(dataIso);
+  const hoje = new Date();
+
+  if (periodo === "este_mes") return mesAnoDe(data) === mesAnoDe(hoje);
+  if (periodo === "mes_passado") {
+    const mesPassado = new Date(hoje.getFullYear(), hoje.getMonth() - 1, 1);
+    return mesAnoDe(data) === mesAnoDe(mesPassado);
+  }
+  if (periodo === "30_dias") {
+    const limite = new Date(hoje);
+    limite.setDate(limite.getDate() - 30);
+    return data >= limite && data <= hoje;
+  }
+  return true;
+}
+
+function popularFiltrosHistorico(contexto) {
+  const categorias = [...new Set(contexto.movimentacoes.map((m) => m.categoria))].sort();
+  const selectCategoria = document.getElementById("filtroCategoria");
+  const valorAtualCategoria = selectCategoria.value;
+  selectCategoria.innerHTML = '<option value="todas">Todas as categorias</option>' + categorias.map((c) => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("");
+  selectCategoria.value = categorias.includes(valorAtualCategoria) ? valorAtualCategoria : "todas";
+
+  const selectConta = document.getElementById("filtroConta");
+  const valorAtualConta = selectConta.value;
+  selectConta.innerHTML = '<option value="todas">Todas as contas</option>' + contexto.contas.map((c) => `<option value="${c.id}">${escapeHtml(c.nome)}</option>`).join("");
+  selectConta.value = contexto.contas.some((c) => c.id === valorAtualConta) ? valorAtualConta : "todas";
+
+  const selectCartao = document.getElementById("filtroCartao");
+  const valorAtualCartao = selectCartao.value;
+  selectCartao.innerHTML = '<option value="todas">Todos os cartões</option>' + contexto.cartoes.map((c) => `<option value="${c.id}">${escapeHtml(c.nome)}</option>`).join("");
+  selectCartao.value = contexto.cartoes.some((c) => c.id === valorAtualCartao) ? valorAtualCartao : "todas";
+}
+
+function itemCombinaComFiltros(item) {
+  if (filtrosHistorico.busca && !item.descricao.toLowerCase().includes(filtrosHistorico.busca.toLowerCase())) return false;
+  if (!dataDentroDoPeriodo(item.data, filtrosHistorico.periodo)) return false;
+  if (filtrosHistorico.tipo !== "todos" && item.tipo !== filtrosHistorico.tipo) return false;
+  if (filtrosHistorico.categoria !== "todas" && item.categoria !== filtrosHistorico.categoria) return false;
+  if (filtrosHistorico.contaId !== "todas") {
+    const pertenceAConta = item.tipoItem === "transferencia"
+      ? item.contaOrigemId === filtrosHistorico.contaId || item.contaDestinoId === filtrosHistorico.contaId
+      : item.contaId === filtrosHistorico.contaId;
+    if (!pertenceAConta) return false;
+  }
+  if (filtrosHistorico.cartaoId !== "todas" && item.cartaoId !== filtrosHistorico.cartaoId) return false;
+  return true;
+}
+
+function renderItemEdicao(item, contexto) {
+  if (item.tipoItem === "transferencia") {
+    const opcoesContas = contexto.contas.map((c) => `<option value="${c.id}" ${c.id === item.contaOrigemId ? "selected" : ""}>${escapeHtml(c.nome)}</option>`).join("");
+    const opcoesContasDestino = contexto.contas.map((c) => `<option value="${c.id}" ${c.id === item.contaDestinoId ? "selected" : ""}>${escapeHtml(c.nome)}</option>`).join("");
+    return `
+      <div class="formEditarItem" data-editando="${item.id}">
+        <input type="text" data-campo="descricao" value="${escapeHtml(item.descricao)}" placeholder="Descrição" />
+        <select data-campo="contaOrigemId">${opcoesContas}</select>
+        <select data-campo="contaDestinoId">${opcoesContasDestino}</select>
+        <input type="number" data-campo="valor" value="${item.valor}" step="0.01" min="0" />
+        <input type="date" data-campo="data" value="${new Date(item.data).toISOString().slice(0, 10)}" />
+        <div class="formEditarItemBotoes">
+          <button type="button" class="botaoSalvarEdicao" data-salvar-transferencia="${item.id}">Salvar</button>
+          <button type="button" class="botaoCancelarEdicao" data-cancelar-edicao>Cancelar</button>
+        </div>
+      </div>
+    `;
+  }
+
+  const opcoesContas = contexto.contas.map((c) => `<option value="${c.id}" ${c.id === item.contaId ? "selected" : ""}>${escapeHtml(c.nome)}</option>`).join("");
+  return `
+    <div class="formEditarItem" data-editando="${item.id}">
+      <input type="text" data-campo="descricao" value="${escapeHtml(item.descricao)}" placeholder="Descrição" />
+      <input type="text" data-campo="categoria" value="${escapeHtml(item.categoria)}" placeholder="Categoria" />
+      <select data-campo="contaId">${opcoesContas}</select>
+      <input type="number" data-campo="valor" value="${item.valor}" step="0.01" min="0" />
+      <input type="date" data-campo="data" value="${new Date(item.data).toISOString().slice(0, 10)}" />
+      <div class="formEditarItemBotoes">
+        <button type="button" class="botaoSalvarEdicao" data-salvar-movimentacao="${item.id}">Salvar</button>
+        <button type="button" class="botaoCancelarEdicao" data-cancelar-edicao>Cancelar</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderHistoricoCompleto(contexto) {
+  const lista = document.getElementById("listaHistoricoCompleto");
+  const todosItens = itensUnificadosHistorico(contexto).filter(itemCombinaComFiltros);
+
+  if (todosItens.length === 0) {
+    lista.innerHTML = '<p class="vazio">Nenhuma movimentação encontrada com esses filtros.</p>';
+    return;
+  }
+
+  const ordenados = todosItens.sort((a, b) => (ordemHistoricoDesc ? new Date(b.data) - new Date(a.data) : new Date(a.data) - new Date(b.data)));
+
+  lista.innerHTML = ordenados
+    .map((m) => {
+      if (itemEmEdicaoId === m.id) return renderItemEdicao(m, contexto);
+
+      if (m.tipoItem === "transferencia") {
+        return `
+          <div class="itemHistorico">
+            <div class="itemIcone">🔄</div>
+            <div class="itemInfo">
+              <div class="itemDescricao">${escapeHtml(m.descricao)}</div>
+              <div class="itemMeta">${escapeHtml(nomeDaConta(m.contaOrigemId, contexto.contas))} → ${escapeHtml(nomeDaConta(m.contaDestinoId, contexto.contas))} · ${formatarDataCurta(m.data)}</div>
+            </div>
+            <div class="itemValor valorTransferencia">⇄ ${formatarMoeda(m.valor)}</div>
+            <button type="button" class="botaoEditarItem" data-editar-transferencia="${m.id}" title="Editar">✎</button>
+            <button type="button" class="botaoExcluirItem" data-excluir-transferencia="${m.id}" title="Apagar">✕</button>
+          </div>
+        `;
+      }
+
+      const sinal = m.tipo === "entrada" ? "+" : "−";
+      const classeValor = m.tipo === "entrada" ? "valorEntrada" : "valorSaida";
+      const icone = m.tipo === "entrada" ? "⬆️" : "⬇️";
+      return `
+        <div class="itemHistorico">
+          <div class="itemIcone">${icone}</div>
+          <div class="itemInfo">
+            <div class="itemDescricao">${escapeHtml(m.descricao)}</div>
+            <div class="itemMeta">${escapeHtml(m.categoria)} · ${escapeHtml(nomeDaConta(m.contaId, contexto.contas))} · ${formatarDataCurta(m.data)}</div>
+          </div>
+          <div class="itemValor ${classeValor}">${sinal} ${formatarMoeda(m.valor)}</div>
+          <button type="button" class="botaoEditarItem" data-editar-movimentacao="${m.id}" title="Editar">✎</button>
+          <button type="button" class="botaoExcluirItem" data-excluir="${m.id}" title="Apagar">✕</button>
+        </div>
+      `;
+    })
+    .join("");
+}
+
 // ---------- render: Contas ----------
 
-function renderContas(contas, movimentacoes) {
+function renderContas(contas, movimentacoes, transferencias) {
   const lista = document.getElementById("listaContas");
   lista.innerHTML = contas
     .map((conta) => {
-      const saldo = saldoDaConta(conta.id, movimentacoes);
+      const saldo = saldoDaConta(conta.id, movimentacoes, transferencias);
       return `
         <div class="cardConta">
           <div class="cardContaTopo">
@@ -640,7 +1079,10 @@ function renderContasFixas(contasFixas, pagamentos, contas) {
         <div class="cardConta">
           <div class="cardContaTopo">
             <div class="cardContaNome">${escapeHtml(cf.nome)}</div>
-            <div class="cardContaTag status-${status}">${ROTULO_STATUS[status]}</div>
+            <div class="cardContaTopoAcoes">
+              <div class="cardContaTag status-${status}">${ROTULO_STATUS[status]}</div>
+              <button type="button" class="botaoExcluirItem" data-excluir-conta-fixa="${cf.id}" title="Apagar">✕</button>
+            </div>
           </div>
           <div class="cardContaSaldo">${formatarMoeda(cf.valor)}</div>
           <div class="itemMeta">dia ${cf.dia} · ${escapeHtml(nomeDaConta(cf.contaId, contas))}</div>
@@ -652,12 +1094,24 @@ function renderContasFixas(contasFixas, pagamentos, contas) {
 }
 
 function popularSelectContas(contas) {
+  const opcoes = contas.map((c) => `<option value="${c.id}">${escapeHtml(c.nome)}</option>`).join("");
+
   const select = document.getElementById("contaPagamentoFixa");
-  select.innerHTML = contas.map((c) => `<option value="${c.id}">${escapeHtml(c.nome)}</option>`).join("");
+  select.innerHTML = opcoes;
+
   const selectCartao = document.getElementById("contaPagamentoCartao");
-  if (selectCartao) {
-    selectCartao.innerHTML = contas.map((c) => `<option value="${c.id}">${escapeHtml(c.nome)}</option>`).join("");
-  }
+  if (selectCartao) selectCartao.innerHTML = opcoes;
+
+  const selectOrigem = document.getElementById("contaOrigemTransferencia");
+  const selectDestino = document.getElementById("contaDestinoTransferencia");
+  if (selectOrigem) selectOrigem.innerHTML = opcoes;
+  if (selectDestino) selectDestino.innerHTML = opcoes;
+
+  const selectMeta = document.getElementById("contaMeta");
+  if (selectMeta) selectMeta.innerHTML = opcoes;
+
+  const selectReceitaFixa = document.getElementById("contaReceitaFixa");
+  if (selectReceitaFixa) selectReceitaFixa.innerHTML = opcoes;
 }
 
 // ---------- render: Cartões e fatura ----------
@@ -707,15 +1161,22 @@ function renderCartoes(contexto) {
     .map((cartao) => {
       const total = totalFatura(cartao.id, mesAno, compras, cartao);
       const status = statusFatura(cartao, mesAno, pagamentosFaturas, hoje);
+      const limiteUsado = limiteUsadoCartao(cartao, contexto);
+      const limiteDisponivel = cartao.limite - limiteUsado;
+      const nomeComInstituicao = cartao.instituicao ? `${cartao.nome} · ${cartao.instituicao}` : cartao.nome;
       return `
-        <button type="button" class="cardConta cardCartaoClicavel" data-fatura="${cartao.id}">
+        <div class="cardConta cardCartaoClicavel" data-fatura="${cartao.id}">
           <div class="cardContaTopo">
-            <div class="cardContaNome">${escapeHtml(cartao.nome)}</div>
-            <div class="cardContaTag status-${status}">${ROTULO_STATUS[status]}</div>
+            <div class="cardContaNome">${escapeHtml(nomeComInstituicao)}</div>
+            <div class="cardContaTopoAcoes">
+              <div class="cardContaTag status-${status}">${ROTULO_STATUS[status]}</div>
+              <button type="button" class="botaoExcluirItem" data-excluir-cartao="${cartao.id}" title="Apagar">✕</button>
+            </div>
           </div>
           <div class="cardContaSaldo">${formatarMoeda(total)}</div>
-          <div class="itemMeta">limite ${formatarMoeda(cartao.limite)} · fecha dia ${cartao.diaFechamento} · vence dia ${cartao.diaVencimento}</div>
-        </button>
+          <div class="itemMeta">disponível ${formatarMoeda(limiteDisponivel)} de ${formatarMoeda(cartao.limite)} · fecha dia ${cartao.diaFechamento} · vence dia ${cartao.diaVencimento}</div>
+          <div class="barraProgresso"><div class="barraProgressoPreenchimento${limiteDisponivel < 0 ? " estourada" : ""}" style="width:${Math.min(100, Math.round((limiteUsado / cartao.limite) * 100))}%"></div></div>
+        </div>
       `;
     })
     .join("");
@@ -741,20 +1202,37 @@ function renderFatura(contexto) {
   const listaCompras = document.getElementById("listaComprasFatura");
   if (itens.length === 0) {
     listaCompras.innerHTML = '<p class="vazio">Nenhuma compra nessa fatura ainda.</p>';
-    return;
+  } else {
+    listaCompras.innerHTML = itens
+      .map(({ compra, parcela }) => `
+        <div class="itemHistorico">
+          <div class="itemIcone">💳</div>
+          <div class="itemInfo">
+            <div class="itemDescricao">${escapeHtml(compra.descricao)}</div>
+            <div class="itemMeta">${escapeHtml(compra.categoria)} · parcela ${parcela}/${compra.parcelas}</div>
+          </div>
+          <div class="itemValor valorSaida">${formatarMoeda(compra.valorParcela)}</div>
+        </div>
+      `)
+      .join("");
   }
 
-  listaCompras.innerHTML = itens
-    .map(({ compra, parcela }) => `
-      <div class="itemHistorico">
-        <div class="itemIcone">💳</div>
-        <div class="itemInfo">
-          <div class="itemDescricao">${escapeHtml(compra.descricao)}</div>
-          <div class="itemMeta">${escapeHtml(compra.categoria)} · parcela ${parcela}/${compra.parcelas}</div>
+  const proximas = proximasFaturas(cartao, contexto, 4);
+  document.getElementById("listaProximasFaturas").innerHTML = proximas
+    .map((f, i) => {
+      const [ano, mes] = f.mesAno.split("-").map(Number);
+      const rotuloMes = `${NOMES_MES[mes - 1]} ${ano}`;
+      const situacao = i === 0 ? ROTULO_STATUS[status] : f.paga ? "Paga" : "Prevista";
+      return `
+        <div class="cardConta">
+          <div class="cardContaTopo">
+            <div class="cardContaNome">${rotuloMes}</div>
+            <div class="cardContaTag">${situacao}</div>
+          </div>
+          <div class="cardContaSaldo">${formatarMoeda(f.total)}</div>
         </div>
-        <div class="itemValor valorSaida">${formatarMoeda(compra.valorParcela)}</div>
-      </div>
-    `)
+      `;
+    })
     .join("");
 }
 
@@ -775,11 +1253,13 @@ function mesmoDia(a, b) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
 
-function eventosDoDia(data, movimentacoes, contasFixas, pagamentos) {
+function eventosDoDia(data, contexto) {
+  const { movimentacoes, contasFixas, pagamentos, cartoes, compras, pagamentosFaturas } = contexto;
   const ano = data.getFullYear();
   const mes = data.getMonth();
   const dia = data.getDate();
   const totalDias = diasNoMes(ano, mes);
+  const mesAno = mesAnoDe(data);
   const eventos = [];
 
   movimentacoes.forEach((m) => {
@@ -792,9 +1272,18 @@ function eventosDoDia(data, movimentacoes, contasFixas, pagamentos) {
   contasFixas.forEach((cf) => {
     const diaLimite = Math.min(cf.dia, totalDias);
     if (diaLimite === dia) {
-      const status = statusContaFixa(cf, mesAnoDe(data), pagamentos, new Date());
+      const status = statusContaFixa(cf, mesAno, pagamentos, new Date());
       eventos.push({ tipo: "vencimento", label: cf.nome, valor: cf.valor, status });
     }
+  });
+
+  cartoes.forEach((cartao) => {
+    const diaLimite = Math.min(cartao.diaVencimento, totalDias);
+    if (diaLimite !== dia) return;
+    const total = totalFatura(cartao.id, mesAno, compras, cartao);
+    if (total <= 0) return;
+    const status = statusFatura(cartao, mesAno, pagamentosFaturas, new Date());
+    eventos.push({ tipo: "vencimento", label: `Fatura ${cartao.nome}`, valor: total, status });
   });
 
   return eventos;
@@ -856,11 +1345,20 @@ function renderMes(contexto) {
     }
   });
 
+  const mesAnoVisualizado = mesAnoDe(mesVisualizado);
   const fixasPorDia = {};
   contasFixas.forEach((cf) => {
     const diaLimite = Math.min(cf.dia, totalDias);
     if (!fixasPorDia[diaLimite]) fixasPorDia[diaLimite] = [];
     fixasPorDia[diaLimite].push(cf);
+  });
+
+  contexto.cartoes.forEach((cartao) => {
+    const diaLimite = Math.min(cartao.diaVencimento, totalDias);
+    const total = totalFatura(cartao.id, mesAnoVisualizado, contexto.compras, cartao);
+    if (total <= 0) return;
+    if (!fixasPorDia[diaLimite]) fixasPorDia[diaLimite] = [];
+    fixasPorDia[diaLimite].push(cartao);
   });
 
   const celulas = [];
@@ -893,7 +1391,7 @@ function renderMes(contexto) {
 
   const painel = document.getElementById("detalheDia");
   if (diaSelecionado && diaSelecionado.getFullYear() === ano && diaSelecionado.getMonth() === mes) {
-    const eventos = eventosDoDia(diaSelecionado, movimentacoes, contasFixas, pagamentos);
+    const eventos = eventosDoDia(diaSelecionado, contexto);
     painel.hidden = false;
     painel.innerHTML = `
       <div class="detalheDiaTitulo">${diaSelecionado.getDate()} de ${NOMES_MES[mes].toLowerCase()}</div>
@@ -922,7 +1420,7 @@ function renderSemana(contexto) {
   for (let i = 0; i < 7; i++) {
     const data = new Date(semanaVisualizada);
     data.setDate(data.getDate() + i);
-    const eventos = eventosDoDia(data, movimentacoes, contasFixas, pagamentos);
+    const eventos = eventosDoDia(data, contexto);
     const ehHoje = mesmoDia(hoje, data);
 
     blocos.push(`
@@ -1166,7 +1664,7 @@ function renderGraficoContas(contexto) {
     return;
   }
 
-  const saldos = contexto.contas.map((c) => ({ nome: c.nome, saldo: saldoDaConta(c.id, contexto.movimentacoes) }));
+  const saldos = contexto.contas.map((c) => ({ nome: c.nome, saldo: saldoDaConta(c.id, contexto.movimentacoes, contexto.transferencias) }));
   const maior = Math.max(1, ...saldos.map((s) => Math.abs(s.saldo)));
 
   alvo.innerHTML = saldos
@@ -1212,9 +1710,14 @@ function renderAnalise(contexto) {
   }
 
   const sugestoes = document.getElementById("sugestoesAnalise");
+  const hoje = new Date();
+  const diasRestantes = diasNoMes(hoje.getFullYear(), hoje.getMonth()) - hoje.getDate();
+  const textoDiasRestantes = diasRestantes > 0 ? `, e ainda faltam ${diasRestantes} dia${diasRestantes > 1 ? "s" : ""} pro fim do mês` : ", e hoje é o último dia do mês";
+
   const alertasCategorias = contexto.orcamentos
-    .map((o) => ({ o, gasto: gastoPorCategoriaMes(o.categoria, contexto) }))
-    .filter((item) => item.o.limite > 0 && item.gasto / item.o.limite >= 0.8);
+    .map((o) => ({ o, gasto: gastoPorCategoriaMes(o.categoria, contexto), pct: o.limite > 0 ? (gastoPorCategoriaMes(o.categoria, contexto) / o.limite) * 100 : 0 }))
+    .filter((item) => item.o.limite > 0 && item.pct >= 50)
+    .sort((a, b) => b.pct - a.pct);
 
   if (alertasCategorias.length === 0) {
     sugestoes.innerHTML = '<p class="vazio">Nenhum alerta por enquanto — seus gastos estão dentro do combinado 🌿</p>';
@@ -1222,15 +1725,25 @@ function renderAnalise(contexto) {
   }
 
   sugestoes.innerHTML = alertasCategorias
-    .map(({ o, gasto }) => {
-      const pct = Math.round((gasto / o.limite) * 100);
-      const estourou = gasto > o.limite;
-      const texto = estourou
-        ? `Você já passou do limite de ${escapeHtml(o.categoria)} este mês (${pct}% usado). Bom momento pra segurar os gastos nessa categoria.`
-        : `Você já usou ${pct}% do limite de ${escapeHtml(o.categoria)} este mês — fique de olho.`;
+    .map(({ o, gasto, pct }) => {
+      const pctArredondado = Math.round(pct);
+      let icone, texto;
+      if (pct >= 100) {
+        icone = "🔴";
+        texto = `Você ultrapassou o orçamento de ${escapeHtml(o.categoria)} este mês (${pctArredondado}% usado). Bom momento pra segurar os gastos nessa categoria.`;
+      } else if (pct >= 90) {
+        icone = "🟠";
+        texto = `Você já usou ${pctArredondado}% do orçamento de ${escapeHtml(o.categoria)}${textoDiasRestantes}. Está quase no limite.`;
+      } else if (pct >= 75) {
+        icone = "🟡";
+        texto = `Você já usou ${pctArredondado}% do orçamento de ${escapeHtml(o.categoria)}${textoDiasRestantes}.`;
+      } else {
+        icone = "🟢";
+        texto = `Você já usou ${pctArredondado}% do orçamento de ${escapeHtml(o.categoria)}${textoDiasRestantes} — dentro do esperado.`;
+      }
       return `
         <div class="itemHistorico itemAgenda">
-          <div class="itemIcone">${estourou ? "🚨" : "💡"}</div>
+          <div class="itemIcone">${icone}</div>
           <div class="itemInfo">
             <div class="itemDescricao">${texto}</div>
           </div>
@@ -1265,6 +1778,27 @@ function renderResumoMetas(contexto) {
     .join("");
 }
 
+function mesesAteOPrazo(prazo) {
+  if (!prazo) return null;
+  const [ano, mes] = prazo.split("-").map(Number);
+  const hoje = new Date();
+  const meses = (ano - hoje.getFullYear()) * 12 + (mes - 1 - hoje.getMonth());
+  return meses;
+}
+
+function sugestaoMensalMeta(meta) {
+  const restante = meta.valorAlvo - meta.valorAtual;
+  if (restante <= 0) return null;
+  const meses = mesesAteOPrazo(meta.prazo);
+  if (meses === null || meses <= 0) return null;
+  return restante / meses;
+}
+
+function formatarPrazo(prazo) {
+  const [ano, mes] = prazo.split("-").map(Number);
+  return `${NOMES_MES[mes - 1]} de ${ano}`;
+}
+
 function renderMetas(contexto) {
   const alvo = document.getElementById("listaMetas");
   if (contexto.metas.length === 0) {
@@ -1272,19 +1806,30 @@ function renderMetas(contexto) {
     return;
   }
 
+  const { projecao } = calcularProjecaoAtual(contexto);
+
   alvo.innerHTML = contexto.metas
     .map((meta) => {
       const pct = progressoMeta(meta);
       const concluida = meta.valorAtual >= meta.valorAlvo;
+      const sugestaoMensal = sugestaoMensalMeta(meta);
+      const comprometeSaldo = sugestaoMensal !== null && projecao - sugestaoMensal < 0;
+
       return `
         <div class="cardConta">
           <div class="cardContaTopo">
             <div class="cardContaNome">${escapeHtml(meta.nome)}${concluida ? " · concluída 🎉" : ""}</div>
-            <div class="cardContaTag">${pct}%</div>
+            <div class="cardContaTopoAcoes">
+              <div class="cardContaTag">${pct}%</div>
+              <button type="button" class="botaoExcluirItem" data-excluir-meta="${meta.id}" title="Apagar">✕</button>
+            </div>
           </div>
           <div class="cardContaSaldo">${formatarMoeda(meta.valorAtual)} <span class="itemMeta">de ${formatarMoeda(meta.valorAlvo)}</span></div>
           <div class="barraProgresso"><div class="barraProgressoPreenchimento" style="width:${pct}%"></div></div>
-          ${meta.prazo ? `<div class="itemMeta">prazo: ${escapeHtml(meta.prazo)}</div>` : ""}
+          ${meta.contaId ? `<div class="itemMeta">guardando em: ${escapeHtml(nomeDaConta(meta.contaId, contexto.contas))}</div>` : ""}
+          ${meta.prazo ? `<div class="itemMeta">prazo: ${formatarPrazo(meta.prazo)}</div>` : ""}
+          ${sugestaoMensal !== null ? `<div class="sugestaoMetaMensal">💡 Guarde ~${formatarMoeda(sugestaoMensal)}/mês pra bater essa meta no prazo.</div>` : ""}
+          ${comprometeSaldo ? `<div class="avisoMetaRisco">⚠️ Guardar ${formatarMoeda(sugestaoMensal)} este mês pode deixar seu saldo abaixo do necessário para as contas previstas.</div>` : ""}
           <form class="formGuardarMeta" data-guardar="${meta.id}">
             <input type="number" step="0.01" min="0" placeholder="Guardar valor" required />
             <button type="submit">Guardar</button>
@@ -1293,6 +1838,81 @@ function renderMetas(contexto) {
       `;
     })
     .join("");
+}
+
+// ---------- render: Projeção detalhada ----------
+
+let periodoProjecaoDetalhada = "semana";
+
+const ROTULOS_PERIODO = { semana: "os próximos 7 dias", mes: "o fim do mês", "30_dias": "os próximos 30 dias", "3_meses": "os próximos 3 meses" };
+
+function renderProjecaoDetalhada(contexto) {
+  const dados = calcularProjecaoDetalhada(contexto, periodoProjecaoDetalhada);
+
+  const cartoes = [
+    { rotulo: "Saldo atual", valor: formatarMoeda(dados.saldoDisponivel), cor: dados.saldoDisponivel >= 0 ? "valorEntrada" : "valorSaida" },
+    { rotulo: "Entradas previstas", valor: `+ ${formatarMoeda(dados.totalEntradasPrevistas)}`, cor: "valorEntrada" },
+    { rotulo: "Contas futuras", valor: `− ${formatarMoeda(dados.totalContasFuturas)}`, cor: "valorSaida" },
+    { rotulo: "Faturas futuras", valor: `− ${formatarMoeda(dados.totalFaturasFuturas)}`, cor: "valorSaida" },
+    { rotulo: "Metas planejadas", valor: `− ${formatarMoeda(dados.totalMetas)}`, cor: "valorSaida" },
+    { rotulo: "Saldo projetado", valor: formatarMoeda(dados.saldoProjetado), cor: dados.saldoProjetado >= 0 ? "valorEntrada" : "valorSaida" },
+  ];
+
+  document.getElementById("fechamentoGridProjecao").innerHTML = cartoes
+    .map((c) => `
+      <div class="fechamentoCard">
+        <div class="fechamentoRotulo">${c.rotulo}</div>
+        <div class="fechamentoValor ${c.cor}">${c.valor}</div>
+      </div>
+    `)
+    .join("");
+
+  const alerta = document.getElementById("alertaProjecaoDetalhada");
+  if (dados.saldoProjetado < 0) {
+    const prioridades = dados.eventos
+      .filter((e) => e.valor < 0)
+      .slice(0, 3)
+      .map((e) => `<li>${escapeHtml(e.label)} — ${formatarDataCurta(e.data)} · ${formatarMoeda(Math.abs(e.valor))}</li>`)
+      .join("");
+    alerta.hidden = false;
+    alerta.innerHTML = `
+      <div class="alertaProjecaoTitulo">🔴 Atenção: pode faltar ${formatarMoeda(Math.abs(dados.saldoProjetado))} até ${ROTULOS_PERIODO[periodoProjecaoDetalhada]}</div>
+      <div class="alertaProjecaoTexto">Você precisa de aproximadamente ${formatarMoeda(Math.abs(dados.saldoProjetado))} em novas entradas, ou reduzir gastos não essenciais. Suas prioridades:</div>
+      <ul class="alertaProjecaoLista">${prioridades}</ul>
+    `;
+  } else if (dados.dataFalta) {
+    alerta.hidden = false;
+    alerta.innerHTML = `
+      <div class="alertaProjecaoTitulo">🧠 ${ROTULOS_PERIODO[periodoProjecaoDetalhada].charAt(0).toUpperCase() + ROTULOS_PERIODO[periodoProjecaoDetalhada].slice(1)} fecha positivo, mas existe um problema de fluxo.</div>
+      <div class="alertaProjecaoTexto">Você terá dinheiro suficiente no fim do período, mas pode faltar ${formatarMoeda(dados.faltaValor)} a partir de ${formatarDataCurta(dados.dataFalta)}.</div>
+    `;
+  } else {
+    alerta.hidden = false;
+    alerta.innerHTML = `<div class="alertaProjecaoTitulo">🌿 Tudo tranquilo — seu saldo deve se manter positivo até ${ROTULOS_PERIODO[periodoProjecaoDetalhada]}.</div>`;
+  }
+
+  const listaEventos = document.getElementById("listaEventosProjecao");
+  if (dados.eventos.length === 0) {
+    listaEventos.innerHTML = '<p class="vazio">Nenhum compromisso previsto nesse período.</p>';
+  } else {
+    listaEventos.innerHTML = dados.eventos
+      .map((e) => {
+        const icone = e.tipo === "fatura" ? "💳" : e.tipo === "receita fixa" ? "⬆️" : "📅";
+        const classeValor = e.valor >= 0 ? "valorEntrada" : "valorSaida";
+        const sinal = e.valor >= 0 ? "+" : "−";
+        return `
+          <div class="itemHistorico">
+            <div class="itemIcone">${icone}</div>
+            <div class="itemInfo">
+              <div class="itemDescricao">${escapeHtml(e.label)}</div>
+              <div class="itemMeta">${formatarDataCurta(e.data)}</div>
+            </div>
+            <div class="itemValor ${classeValor}">${sinal} ${formatarMoeda(Math.abs(e.valor))}</div>
+          </div>
+        `;
+      })
+      .join("");
+  }
 }
 
 // ---------- árvore da saúde financeira ----------
@@ -1306,11 +1926,8 @@ const ESTADOS_ARVORE = {
 };
 
 function calcularSaudeFinanceira(contexto) {
-  const { saldoDisponivel } = calcularSaldoDisponivel(contexto);
-  const pendentes = contasFixasPendentesDoMes(contexto);
+  const { pendentes, projecao } = calcularProjecaoAtual(contexto);
   const atrasadas = pendentes.filter((p) => p.status === "atrasada");
-  const somaPendentes = pendentes.reduce((soma, p) => soma + p.cf.valor, 0);
-  const projecao = saldoDisponivel - somaPendentes;
 
   const estourados = contexto.orcamentos.filter((o) => gastoPorCategoriaMes(o.categoria, contexto) > o.limite);
   const metasComProgresso = contexto.metas.filter((m) => m.valorAtual > 0);
@@ -1463,6 +2080,7 @@ function montarResumoParaIA(contexto) {
     faturasEmAberto: faturasAbertas,
     projecaoFimDoMes: saldoDisponivel - somaPendentes,
     contasFixasPendentes: pendentes.map((p) => ({ nome: p.cf.nome, valor: p.cf.valor, dia: p.cf.dia, status: p.status })),
+    receitasFixasPendentes: receitasFixasPendentesDoMes(contexto).map((p) => ({ nome: p.rf.nome, valor: p.rf.valor, dia: p.rf.dia, status: p.status })),
     orcamentos: contexto.orcamentos.map((o) => ({ categoria: o.categoria, limite: o.limite, gastoAtual: gastoPorCategoriaMes(o.categoria, contexto) })),
     metas: contexto.metas.map((m) => ({ nome: m.nome, valorAlvo: m.valorAlvo, valorAtual: m.valorAtual, progresso: progressoMeta(m) + "%" })),
     saudeFinanceiraGeral: saude.estado,
@@ -1470,6 +2088,40 @@ function montarResumoParaIA(contexto) {
 }
 
 // ---------- render: Receitas ----------
+
+function renderReceitasFixas(contexto) {
+  const alvo = document.getElementById("listaReceitasFixas");
+  if (contexto.receitasFixas.length === 0) {
+    alvo.innerHTML = '<p class="vazio">Nenhuma receita fixa cadastrada ainda — adicione abaixo.</p>';
+    return;
+  }
+
+  const hoje = new Date();
+  const mesAno = mesAnoDe(hoje);
+
+  alvo.innerHTML = contexto.receitasFixas
+    .slice()
+    .sort((a, b) => a.dia - b.dia)
+    .map((rf) => {
+      const status = statusReceitaFixa(rf, mesAno, contexto.recebimentos, hoje);
+      const botao = status === "paga" ? "" : `<button class="botaoPagarFixa" data-receber="${rf.id}">Marcar como recebida</button>`;
+      return `
+        <div class="cardConta">
+          <div class="cardContaTopo">
+            <div class="cardContaNome">${escapeHtml(rf.nome)}</div>
+            <div class="cardContaTopoAcoes">
+              <div class="cardContaTag status-${status}">${ROTULO_STATUS[status]}</div>
+              <button type="button" class="botaoExcluirItem" data-excluir-receita-fixa="${rf.id}" title="Apagar">✕</button>
+            </div>
+          </div>
+          <div class="cardContaSaldo">${formatarMoeda(rf.valor)}</div>
+          <div class="itemMeta">dia ${rf.dia} · ${escapeHtml(nomeDaConta(rf.contaId, contexto.contas))}</div>
+          ${botao}
+        </div>
+      `;
+    })
+    .join("");
+}
 
 function renderReceitas(movimentacoes, contas) {
   const lista = document.getElementById("listaReceitas");
@@ -1696,13 +2348,16 @@ function iniciarApp(dadosIniciais) {
   const contexto = { ...dadosIniciais };
 
   function atualizarTudo() {
-    const { contas, movimentacoes, contasFixas, pagamentos } = contexto;
+    const { contas, movimentacoes, contasFixas, pagamentos, transferencias } = contexto;
     renderResumo(contexto);
     renderProjecao(contexto);
-    renderSaldoPorConta(contas, movimentacoes);
-    renderHistorico(movimentacoes, contas);
-    renderContas(contas, movimentacoes);
+    renderSaldoPorConta(contas, movimentacoes, transferencias);
+    renderHistorico(contexto);
+    popularFiltrosHistorico(contexto);
+    renderHistoricoCompleto(contexto);
+    renderContas(contas, movimentacoes, transferencias);
     renderReceitas(movimentacoes, contas);
+    renderReceitasFixas(contexto);
     renderProximasFixas(contasFixas, pagamentos);
     renderContasFixas(contasFixas, pagamentos, contas);
     popularSelectContas(contas);
@@ -1720,6 +2375,7 @@ function iniciarApp(dadosIniciais) {
     renderResumoMetas(contexto);
     renderMetas(contexto);
     renderArvore(contexto);
+    renderProjecaoDetalhada(contexto);
   }
 
   popularSelectCategoriaOrcamento();
@@ -1738,6 +2394,31 @@ function iniciarApp(dadosIniciais) {
     if (!texto) return;
 
     const textoMinusculo = texto.toLowerCase();
+
+    const resultadoTransferencia = tentarRegistrarTransferencia(texto, textoMinusculo, contexto);
+    if (resultadoTransferencia) {
+      if (resultadoTransferencia.erro) {
+        mostrarFeedback(resultadoTransferencia.erro);
+        return;
+      }
+      const { origem, destino, valor } = resultadoTransferencia;
+      await registrarTransferencia(origem.id, destino.id, valor, null, texto, contexto);
+      atualizarTudo();
+      mostrarFeedback(`Transferido <b>${formatarMoeda(valor)}</b>: ${escapeHtml(origem.nome)} → ${escapeHtml(destino.nome)} 🔄`);
+      inputConversa.value = "";
+      inputConversa.focus();
+      return;
+    }
+
+    const receitaRecebida = tentarReceberReceitaFixaPorTexto(textoMinusculo, contexto);
+    if (receitaRecebida) {
+      atualizarTudo();
+      mostrarFeedback(`Recebido: <b>${escapeHtml(receitaRecebida.nome)}</b> · ${formatarMoeda(receitaRecebida.valor)}`);
+      inputConversa.value = "";
+      inputConversa.focus();
+      return;
+    }
+
     const contaFixaPaga = tentarPagarContaFixaPorTexto(textoMinusculo, contexto);
 
     if (contaFixaPaga) {
@@ -1857,6 +2538,34 @@ function iniciarApp(dadosIniciais) {
     nomeConta.focus();
   });
 
+  // transferência entre contas (formulário manual)
+  const formTransferencia = document.getElementById("formTransferencia");
+  const contaOrigemTransferencia = document.getElementById("contaOrigemTransferencia");
+  const contaDestinoTransferencia = document.getElementById("contaDestinoTransferencia");
+  const valorTransferencia = document.getElementById("valorTransferencia");
+  const descricaoTransferencia = document.getElementById("descricaoTransferencia");
+
+  formTransferencia.addEventListener("submit", async (evento) => {
+    evento.preventDefault();
+    const origemId = contaOrigemTransferencia.value;
+    const destinoId = contaDestinoTransferencia.value;
+    const valor = parseFloat(valorTransferencia.value);
+
+    if (!origemId || !destinoId || isNaN(valor) || valor <= 0) return;
+    if (origemId === destinoId) {
+      contaDestinoTransferencia.setCustomValidity("A conta de destino precisa ser diferente da de origem.");
+      contaDestinoTransferencia.reportValidity();
+      contaDestinoTransferencia.addEventListener("input", () => contaDestinoTransferencia.setCustomValidity(""), { once: true });
+      return;
+    }
+
+    await registrarTransferencia(origemId, destinoId, valor, null, descricaoTransferencia.value.trim(), contexto);
+
+    atualizarTudo();
+    valorTransferencia.value = "";
+    descricaoTransferencia.value = "";
+  });
+
   // nova conta fixa
   const formNovaContaFixa = document.getElementById("formNovaContaFixa");
   const nomeContaFixa = document.getElementById("nomeContaFixa");
@@ -1896,7 +2605,17 @@ function iniciarApp(dadosIniciais) {
   });
 
   // marcar conta fixa como paga (clique no botão)
-  document.getElementById("listaContasFixas").addEventListener("click", (evento) => {
+  document.getElementById("listaContasFixas").addEventListener("click", async (evento) => {
+    const botaoExcluir = evento.target.closest("[data-excluir-conta-fixa]");
+    if (botaoExcluir) {
+      const id = botaoExcluir.dataset.excluirContaFixa;
+      contexto.contasFixas = contexto.contasFixas.filter((cf) => cf.id !== id);
+      contexto.pagamentos = contexto.pagamentos.filter((p) => p.contaFixaId !== id);
+      await supabaseClient.from("contas_fixas").delete().eq("id", id);
+      atualizarTudo();
+      return;
+    }
+
     const botao = evento.target.closest("[data-pagar]");
     if (!botao) return;
 
@@ -1907,6 +2626,63 @@ function iniciarApp(dadosIniciais) {
     if (estaPaga(contaFixa.id, mesAno, contexto.pagamentos)) return;
 
     pagarContaFixa(contaFixa, mesAno, contexto);
+    atualizarTudo();
+  });
+
+  // nova receita fixa
+  const formNovaReceitaFixa = document.getElementById("formNovaReceitaFixa");
+  const nomeReceitaFixa = document.getElementById("nomeReceitaFixa");
+  const valorReceitaFixa = document.getElementById("valorReceitaFixa");
+  const diaReceitaFixa = document.getElementById("diaReceitaFixa");
+  const contaReceitaFixa = document.getElementById("contaReceitaFixa");
+
+  formNovaReceitaFixa.addEventListener("submit", async (evento) => {
+    evento.preventDefault();
+    const nome = nomeReceitaFixa.value.trim();
+    const valor = parseFloat(valorReceitaFixa.value);
+    const dia = parseInt(diaReceitaFixa.value, 10);
+    if (!nome || isNaN(valor) || isNaN(dia)) return;
+
+    const novaReceitaFixa = {
+      id: gerarId(), nome, valor, dia, categoria: "Renda",
+      contaId: contaReceitaFixa.value || contexto.contas[0].id, repeticao: "mensal",
+    };
+
+    contexto.receitasFixas = [...contexto.receitasFixas, novaReceitaFixa];
+    await inserirLinha("receitas_fixas", {
+      id: novaReceitaFixa.id, user_id: usuarioId, nome: novaReceitaFixa.nome, valor: novaReceitaFixa.valor,
+      dia: novaReceitaFixa.dia, categoria: novaReceitaFixa.categoria, conta_id: novaReceitaFixa.contaId, repeticao: novaReceitaFixa.repeticao,
+    });
+
+    atualizarTudo();
+    nomeReceitaFixa.value = "";
+    valorReceitaFixa.value = "";
+    diaReceitaFixa.value = "";
+    nomeReceitaFixa.focus();
+  });
+
+  // marcar receita fixa como recebida
+  document.getElementById("listaReceitasFixas").addEventListener("click", async (evento) => {
+    const botaoExcluir = evento.target.closest("[data-excluir-receita-fixa]");
+    if (botaoExcluir) {
+      const id = botaoExcluir.dataset.excluirReceitaFixa;
+      contexto.receitasFixas = contexto.receitasFixas.filter((rf) => rf.id !== id);
+      contexto.recebimentos = contexto.recebimentos.filter((r) => r.receitaFixaId !== id);
+      await supabaseClient.from("receitas_fixas").delete().eq("id", id);
+      atualizarTudo();
+      return;
+    }
+
+    const botao = evento.target.closest("[data-receber]");
+    if (!botao) return;
+
+    const receitaFixa = contexto.receitasFixas.find((rf) => rf.id === botao.dataset.receber);
+    if (!receitaFixa) return;
+
+    const mesAno = mesAnoDe(new Date());
+    if (receitaEstaRecebida(receitaFixa.id, mesAno, contexto.recebimentos)) return;
+
+    await receberReceitaFixa(receitaFixa, mesAno, contexto);
     atualizarTudo();
   });
 
@@ -1958,6 +2734,7 @@ function iniciarApp(dadosIniciais) {
   // novo cartão
   const formNovoCartao = document.getElementById("formNovoCartao");
   const nomeCartao = document.getElementById("nomeCartao");
+  const instituicaoCartao = document.getElementById("instituicaoCartao");
   const limiteCartao = document.getElementById("limiteCartao");
   const fechamentoCartao = document.getElementById("fechamentoCartao");
   const vencimentoCartao = document.getElementById("vencimentoCartao");
@@ -1974,6 +2751,7 @@ function iniciarApp(dadosIniciais) {
     const novoCartao = {
       id: gerarId(),
       nome,
+      instituicao: instituicaoCartao.value.trim(),
       limite,
       diaFechamento,
       diaVencimento,
@@ -1982,12 +2760,13 @@ function iniciarApp(dadosIniciais) {
 
     contexto.cartoes = [...contexto.cartoes, novoCartao];
     await inserirLinha("cartoes", {
-      id: novoCartao.id, user_id: usuarioId, nome: novoCartao.nome, limite: novoCartao.limite,
+      id: novoCartao.id, user_id: usuarioId, nome: novoCartao.nome, instituicao: novoCartao.instituicao || null, limite: novoCartao.limite,
       dia_fechamento: novoCartao.diaFechamento, dia_vencimento: novoCartao.diaVencimento, conta_id: novoCartao.contaId,
     });
 
     atualizarTudo();
     nomeCartao.value = "";
+    instituicaoCartao.value = "";
     limiteCartao.value = "";
     fechamentoCartao.value = "";
     vencimentoCartao.value = "";
@@ -1995,7 +2774,18 @@ function iniciarApp(dadosIniciais) {
   });
 
   // abrir a fatura de um cartão
-  document.getElementById("listaCartoes").addEventListener("click", (evento) => {
+  document.getElementById("listaCartoes").addEventListener("click", async (evento) => {
+    const botaoExcluir = evento.target.closest("[data-excluir-cartao]");
+    if (botaoExcluir) {
+      const id = botaoExcluir.dataset.excluirCartao;
+      contexto.cartoes = contexto.cartoes.filter((c) => c.id !== id);
+      contexto.compras = contexto.compras.filter((c) => c.cartaoId !== id);
+      contexto.pagamentosFaturas = contexto.pagamentosFaturas.filter((p) => p.cartaoId !== id);
+      await supabaseClient.from("cartoes").delete().eq("id", id);
+      atualizarTudo();
+      return;
+    }
+
     const botao = evento.target.closest("[data-fatura]");
     if (!botao) return;
     cartaoAtualId = botao.dataset.fatura;
@@ -2046,11 +2836,20 @@ function iniciarApp(dadosIniciais) {
   // mostrar mais/menos no histórico
   document.getElementById("toggleHistorico").addEventListener("click", () => {
     historicoExpandido = !historicoExpandido;
-    renderHistorico(contexto.movimentacoes, contexto.contas);
+    renderHistorico(contexto);
   });
 
-  // apagar uma movimentação do histórico
+  // apagar uma movimentação ou transferência do histórico
   document.getElementById("listaHistorico").addEventListener("click", async (evento) => {
+    const botaoTransferencia = evento.target.closest("[data-excluir-transferencia]");
+    if (botaoTransferencia) {
+      const id = botaoTransferencia.dataset.excluirTransferencia;
+      contexto.transferencias = contexto.transferencias.filter((t) => t.id !== id);
+      await supabaseClient.from("transferencias").delete().eq("id", id);
+      atualizarTudo();
+      return;
+    }
+
     const botao = evento.target.closest("[data-excluir]");
     if (!botao) return;
 
@@ -2073,6 +2872,7 @@ function iniciarApp(dadosIniciais) {
   const formNovaMeta = document.getElementById("formNovaMeta");
   const nomeMeta = document.getElementById("nomeMeta");
   const valorAlvoMeta = document.getElementById("valorAlvoMeta");
+  const contaMeta = document.getElementById("contaMeta");
   const prazoMeta = document.getElementById("prazoMeta");
 
   formNovaMeta.addEventListener("submit", async (evento) => {
@@ -2081,11 +2881,15 @@ function iniciarApp(dadosIniciais) {
     const valorAlvo = parseFloat(valorAlvoMeta.value);
     if (!nome || isNaN(valorAlvo)) return;
 
-    const novaMeta = { id: gerarId(), nome, valorAlvo, valorAtual: 0, prazo: prazoMeta.value.trim() };
+    const novaMeta = {
+      id: gerarId(), nome, valorAlvo, valorAtual: 0,
+      prazo: prazoMeta.value || "",
+      contaId: contaMeta.value || null,
+    };
     contexto.metas = [...contexto.metas, novaMeta];
     await inserirLinha("metas", {
       id: novaMeta.id, user_id: usuarioId, nome: novaMeta.nome, valor_alvo: novaMeta.valorAlvo,
-      valor_atual: novaMeta.valorAtual, prazo: novaMeta.prazo || null,
+      valor_atual: novaMeta.valorAtual, prazo: novaMeta.prazo || null, conta_id: novaMeta.contaId,
     });
 
     atualizarTudo();
@@ -2112,6 +2916,17 @@ function iniciarApp(dadosIniciais) {
     atualizarTudo();
   });
 
+  document.getElementById("listaMetas").addEventListener("click", async (evento) => {
+    const botaoExcluir = evento.target.closest("[data-excluir-meta]");
+    if (!botaoExcluir) return;
+
+    const id = botaoExcluir.dataset.excluirMeta;
+    contexto.metas = contexto.metas.filter((m) => m.id !== id);
+    contexto.contribuicoesMetas = contexto.contribuicoesMetas.filter((c) => c.metaId !== id);
+    await supabaseClient.from("metas").delete().eq("id", id);
+    atualizarTudo();
+  });
+
   // resetar todos os dados (zona de risco, em Contas)
   const botaoResetar = document.getElementById("botaoResetar");
   const confirmarReset = document.getElementById("confirmarReset");
@@ -2130,8 +2945,8 @@ function iniciarApp(dadosIniciais) {
     botaoSim.textContent = "Apagando...";
 
     const tabelas = [
-      "pagamentos_faturas", "pagamentos_fixas", "compras_cartao", "contribuicoes_metas",
-      "movimentacoes", "contas_fixas", "cartoes", "orcamentos", "metas", "contas",
+      "pagamentos_faturas", "pagamentos_fixas", "compras_cartao", "contribuicoes_metas", "transferencias", "recebimentos_fixos",
+      "movimentacoes", "contas_fixas", "receitas_fixas", "cartoes", "orcamentos", "metas", "contas",
     ];
     for (const tabela of tabelas) {
       await supabaseClient.from(tabela).delete().eq("user_id", usuarioId);
@@ -2148,6 +2963,9 @@ function iniciarApp(dadosIniciais) {
     contexto.orcamentos = dadosZerados.orcamentos;
     contexto.metas = dadosZerados.metas;
     contexto.contribuicoesMetas = dadosZerados.contribuicoesMetas;
+    contexto.transferencias = dadosZerados.transferencias;
+    contexto.receitasFixas = dadosZerados.receitasFixas;
+    contexto.recebimentos = dadosZerados.recebimentos;
 
     historicoExpandido = false;
     diaSelecionado = null;
@@ -2159,6 +2977,123 @@ function iniciarApp(dadosIniciais) {
     botaoSim.disabled = false;
     botaoSim.textContent = "Sim, apagar tudo";
     irPara("inicio");
+  });
+
+  // histórico completo: busca, filtros e ordenação
+  document.getElementById("buscaHistorico").addEventListener("input", (evento) => {
+    filtrosHistorico.busca = evento.target.value;
+    renderHistoricoCompleto(contexto);
+  });
+
+  ["filtroPeriodo", "filtroTipo", "filtroCategoria", "filtroConta", "filtroCartao"].forEach((idFiltro) => {
+    const campo = { filtroPeriodo: "periodo", filtroTipo: "tipo", filtroCategoria: "categoria", filtroConta: "contaId", filtroCartao: "cartaoId" }[idFiltro];
+    document.getElementById(idFiltro).addEventListener("change", (evento) => {
+      filtrosHistorico[campo] = evento.target.value;
+      renderHistoricoCompleto(contexto);
+    });
+  });
+
+  document.getElementById("botaoOrdemHistorico").addEventListener("click", () => {
+    ordemHistoricoDesc = !ordemHistoricoDesc;
+    document.getElementById("botaoOrdemHistorico").textContent = ordemHistoricoDesc ? "↓ mais recentes primeiro" : "↑ mais antigos primeiro";
+    renderHistoricoCompleto(contexto);
+  });
+
+  // histórico completo: editar, salvar, cancelar e apagar
+  document.getElementById("listaHistoricoCompleto").addEventListener("click", async (evento) => {
+    const botaoEditarMov = evento.target.closest("[data-editar-movimentacao]");
+    const botaoEditarTransf = evento.target.closest("[data-editar-transferencia]");
+    const botaoCancelar = evento.target.closest("[data-cancelar-edicao]");
+    const botaoSalvarMov = evento.target.closest("[data-salvar-movimentacao]");
+    const botaoSalvarTransf = evento.target.closest("[data-salvar-transferencia]");
+    const botaoExcluirTransf = evento.target.closest("[data-excluir-transferencia]");
+    const botaoExcluirMov = evento.target.closest("[data-excluir]");
+
+    if (botaoEditarMov) {
+      itemEmEdicaoId = botaoEditarMov.dataset.editarMovimentacao;
+      renderHistoricoCompleto(contexto);
+      return;
+    }
+    if (botaoEditarTransf) {
+      itemEmEdicaoId = botaoEditarTransf.dataset.editarTransferencia;
+      renderHistoricoCompleto(contexto);
+      return;
+    }
+    if (botaoCancelar) {
+      itemEmEdicaoId = null;
+      renderHistoricoCompleto(contexto);
+      return;
+    }
+
+    if (botaoSalvarMov) {
+      const id = botaoSalvarMov.dataset.salvarMovimentacao;
+      const form = botaoSalvarMov.closest("[data-editando]");
+      const descricao = form.querySelector('[data-campo="descricao"]').value.trim();
+      const categoria = form.querySelector('[data-campo="categoria"]').value.trim();
+      const contaId = form.querySelector('[data-campo="contaId"]').value;
+      const valor = parseFloat(form.querySelector('[data-campo="valor"]').value);
+      const data = new Date(form.querySelector('[data-campo="data"]').value).toISOString();
+      if (!descricao || !categoria || isNaN(valor) || valor <= 0) return;
+
+      const mov = contexto.movimentacoes.find((m) => m.id === id);
+      if (mov) {
+        Object.assign(mov, { descricao, categoria, contaId, valor, data });
+        await atualizarLinha("movimentacoes", id, { descricao, categoria, conta_id: contaId, valor, data });
+      }
+      itemEmEdicaoId = null;
+      atualizarTudo();
+      return;
+    }
+
+    if (botaoSalvarTransf) {
+      const id = botaoSalvarTransf.dataset.salvarTransferencia;
+      const form = botaoSalvarTransf.closest("[data-editando]");
+      const descricao = form.querySelector('[data-campo="descricao"]').value.trim();
+      const contaOrigemId = form.querySelector('[data-campo="contaOrigemId"]').value;
+      const contaDestinoId = form.querySelector('[data-campo="contaDestinoId"]').value;
+      const valor = parseFloat(form.querySelector('[data-campo="valor"]').value);
+      const data = new Date(form.querySelector('[data-campo="data"]').value).toISOString();
+      if (isNaN(valor) || valor <= 0 || contaOrigemId === contaDestinoId) return;
+
+      const transf = contexto.transferencias.find((t) => t.id === id);
+      if (transf) {
+        Object.assign(transf, { descricao, contaOrigemId, contaDestinoId, valor, data });
+        await atualizarLinha("transferencias", id, { descricao, conta_origem_id: contaOrigemId, conta_destino_id: contaDestinoId, valor, data });
+      }
+      itemEmEdicaoId = null;
+      atualizarTudo();
+      return;
+    }
+
+    if (botaoExcluirTransf) {
+      const id = botaoExcluirTransf.dataset.excluirTransferencia;
+      contexto.transferencias = contexto.transferencias.filter((t) => t.id !== id);
+      await supabaseClient.from("transferencias").delete().eq("id", id);
+      atualizarTudo();
+      return;
+    }
+
+    if (botaoExcluirMov) {
+      const id = botaoExcluirMov.dataset.excluir;
+      contexto.movimentacoes = contexto.movimentacoes.filter((m) => m.id !== id);
+      contexto.pagamentos = contexto.pagamentos.filter((p) => p.movimentacaoId !== id);
+      contexto.pagamentosFaturas = contexto.pagamentosFaturas.filter((p) => p.movimentacaoId !== id);
+      await Promise.all([
+        supabaseClient.from("movimentacoes").delete().eq("id", id),
+        supabaseClient.from("pagamentos_fixas").delete().eq("movimentacao_id", id),
+        supabaseClient.from("pagamentos_faturas").delete().eq("movimentacao_id", id),
+      ]);
+      atualizarTudo();
+    }
+  });
+
+  // projeção detalhada — troca de período
+  document.querySelectorAll("[data-periodo-projecao]").forEach((botao) => {
+    botao.addEventListener("click", () => {
+      periodoProjecaoDetalhada = botao.dataset.periodoProjecao;
+      document.querySelectorAll("[data-periodo-projecao]").forEach((b) => b.classList.toggle("ativo", b === botao));
+      renderProjecaoDetalhada(contexto);
+    });
   });
 
   // navegação entre telas

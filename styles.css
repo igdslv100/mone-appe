@@ -533,6 +533,115 @@ section h2 {
   color: var(--grafite);
 }
 
+.valorTransferencia {
+  color: var(--dourado);
+}
+
+.inputBusca {
+  width: 100%;
+  border: 1px solid rgba(23, 59, 50, 0.15);
+  background: #fff;
+  border-radius: 14px;
+  padding: 12px 16px;
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--grafite);
+  outline: none;
+  margin-bottom: 10px;
+}
+
+.inputBusca:focus {
+  border-color: var(--verde-medio);
+}
+
+.filtrosHistorico {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.filtrosHistorico select {
+  flex: 1;
+  min-width: 130px;
+  border: 1px solid rgba(23, 59, 50, 0.15);
+  background: #fff;
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 12.5px;
+  font-family: inherit;
+  color: var(--grafite);
+}
+
+.filtrosHistorico .linkBotao {
+  flex-basis: 100%;
+  text-align: center;
+}
+
+.botaoEditarItem {
+  border: none;
+  background: none;
+  color: var(--verde-medio);
+  font-size: 13px;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  cursor: pointer;
+  opacity: 0.5;
+}
+
+.botaoEditarItem:hover {
+  opacity: 1;
+  background: var(--verde-claro);
+}
+
+.formEditarItem {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: #fff;
+  border-radius: 14px;
+  padding: 14px;
+  box-shadow: var(--sombra);
+  border: 1px solid rgba(23, 59, 50, 0.06);
+}
+
+.formEditarItem input,
+.formEditarItem select {
+  border: 1px solid rgba(23, 59, 50, 0.15);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 12.5px;
+  font-family: inherit;
+  color: var(--grafite);
+}
+
+.formEditarItemBotoes {
+  display: flex;
+  gap: 8px;
+}
+
+.formEditarItemBotoes button {
+  flex: 1;
+  border: none;
+  border-radius: 10px;
+  padding: 8px;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.formEditarItemBotoes .botaoSalvarEdicao {
+  background: var(--verde-profundo);
+  color: var(--creme);
+}
+
+.formEditarItemBotoes .botaoCancelarEdicao {
+  background: var(--verde-claro);
+  color: var(--verde-profundo);
+}
+
 .vazio {
   font-size: 13.5px;
   color: var(--verde-medio);
@@ -670,6 +779,12 @@ section h2 {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 8px;
+}
+
+.cardContaTopoAcoes {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .cardContaNome {
@@ -1154,6 +1269,24 @@ section h2 {
 .botaoMostrarMais {
   align-self: center;
   margin-top: 4px;
+}
+
+.sugestaoMetaMensal {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--verde-medio);
+  background: var(--verde-claro);
+  padding: 8px 10px;
+  border-radius: 10px;
+}
+
+.avisoMetaRisco {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #9a4a20;
+  background: #fbe9dd;
+  padding: 8px 10px;
+  border-radius: 10px;
 }
 
 .formGuardarMeta {

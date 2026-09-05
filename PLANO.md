@@ -76,3 +76,13 @@ Cada movimentação pertence a uma conta e a uma categoria. Contas fixas e fatur
 - [x] Gráficos e relatórios mais completos — evolução 6 meses, pizza por categoria, saldo por conta
 - [x] Resumo de fechamento do mês (total gasto, total guardado, contas fixas pagas, maior gasto)
 - [x] Notificações push de verdade — conta fixa/fatura vencendo amanhã, orçamento perto de estourar, projeção negativa (roda sozinho todo dia às 9h)
+
+## 7. Versão 3 — evolução do app (em construção)
+
+- [x] Transferência entre contas (não conta como entrada/saída, ajusta saldo das duas contas)
+- [x] Histórico completo (busca, filtros por período/tipo/categoria/conta/cartão, ordenação, editar e apagar)
+- [x] Cartão completo (instituição, limite disponível, próximas faturas, parcelas futuras no calendário)
+- [x] Orçamento com alertas em camadas (50/75/90/100%+, com dias restantes do mês)
+- [x] Metas integradas (conta de destino, cálculo automático de quanto guardar por mês, aviso se comprometer o saldo)
+- [x] Projeção detalhada (semana/mês/30 dias/3 meses, alertas com contexto e prioridades)
+- [x] Receitas fixas (salário e afins, entram como "entradas previstas" na projeção)

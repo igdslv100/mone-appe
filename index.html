@@ -98,7 +98,10 @@
       </section>
 
       <section class="projecaoSecao">
-        <h2>🔮 Projeção do mês</h2>
+        <div class="tituloComLink">
+          <h2>🔮 Projeção do mês</h2>
+          <button class="linkBotao" data-ir="projecaoDetalhada">ver detalhada →</button>
+        </div>
         <div class="cardProjecao">
           <div class="projecaoLegenda">Você deve fechar o mês com</div>
           <div class="projecaoValor" id="projecaoValor">R$ 0,00</div>
@@ -195,6 +198,7 @@
             <p class="vazio">Nada por aqui ainda — registre sua primeira movimentação acima 👆</p>
           </div>
           <button id="toggleHistorico" class="linkBotao botaoMostrarMais" hidden>mostrar mais ↓</button>
+          <button class="linkBotao botaoMostrarMais" data-ir="historicoCompleto">🔍 buscar, filtrar e editar →</button>
         </div>
       </section>
     </div>
@@ -222,6 +226,17 @@
         </form>
       </section>
 
+      <section class="novaContaSecao">
+        <h2>🔄 Transferir entre contas</h2>
+        <form id="formTransferencia" class="formNovaConta">
+          <select id="contaOrigemTransferencia"></select>
+          <select id="contaDestinoTransferencia"></select>
+          <input type="number" id="valorTransferencia" placeholder="Valor (ex.: 100.00)" step="0.01" min="0" required />
+          <input type="text" id="descricaoTransferencia" placeholder="Descrição (opcional)" autocomplete="off" />
+          <button type="submit">Transferir</button>
+        </form>
+      </section>
+
       <section class="zonaPerigo">
         <h2>Zona de risco</h2>
         <p class="zonaPerigoTexto">Isso apaga TODOS os seus dados no MONE (contas, movimentações, cartões, metas...). Não dá pra desfazer.</p>
@@ -243,6 +258,79 @@
         <h2 class="tituloView">Receitas</h2>
       </div>
       <div id="listaReceitas" class="listaReceitas"></div>
+
+      <section class="novaContaSecao">
+        <h2>🔁 Receitas fixas</h2>
+        <div id="listaReceitasFixas" class="listaContasFixasCompleta"></div>
+        <form id="formNovaReceitaFixa" class="formNovaConta" style="margin-top: 12px;">
+          <input type="text" id="nomeReceitaFixa" placeholder="Ex.: Salário, Freela fixo" autocomplete="off" required />
+          <input type="number" id="valorReceitaFixa" placeholder="Valor (ex.: 3000.00)" step="0.01" min="0" required />
+          <input type="number" id="diaReceitaFixa" placeholder="Dia do recebimento (1-31)" min="1" max="31" required />
+          <select id="contaReceitaFixa"></select>
+          <button type="submit">Adicionar receita fixa</button>
+        </form>
+      </section>
+    </div>
+
+    <!-- VIEW: Projeção detalhada -->
+    <div id="viewProjecaoDetalhada" class="view" hidden>
+      <div class="cabecalhoView">
+        <button class="voltar" data-ir="inicio">← voltar</button>
+        <h2 class="tituloView">Projeção detalhada</h2>
+      </div>
+
+      <div class="alternadorModo">
+        <button class="botaoModo ativo" data-periodo-projecao="semana">Semana</button>
+        <button class="botaoModo" data-periodo-projecao="mes">Mês</button>
+        <button class="botaoModo" data-periodo-projecao="30_dias">30 dias</button>
+        <button class="botaoModo" data-periodo-projecao="3_meses">3 meses</button>
+      </div>
+
+      <div id="alertaProjecaoDetalhada" class="alertaProjecao" hidden></div>
+
+      <div id="fechamentoGridProjecao" class="fechamentoGrid"></div>
+
+      <section>
+        <h2>Compromissos no período</h2>
+        <div id="listaEventosProjecao" class="listaHistorico"></div>
+      </section>
+    </div>
+
+    <!-- VIEW: Histórico completo -->
+    <div id="viewHistoricoCompleto" class="view" hidden>
+      <div class="cabecalhoView">
+        <button class="voltar" data-ir="inicio">← voltar</button>
+        <h2 class="tituloView">Histórico completo</h2>
+      </div>
+
+      <input type="text" id="buscaHistorico" class="inputBusca" placeholder="🔍 Buscar por descrição..." autocomplete="off" />
+
+      <div class="filtrosHistorico">
+        <select id="filtroPeriodo">
+          <option value="todos">Todo o período</option>
+          <option value="este_mes">Este mês</option>
+          <option value="mes_passado">Mês passado</option>
+          <option value="30_dias">Últimos 30 dias</option>
+        </select>
+        <select id="filtroTipo">
+          <option value="todos">Todos os tipos</option>
+          <option value="entrada">Entradas</option>
+          <option value="saida">Saídas</option>
+          <option value="transferencia">Transferências</option>
+        </select>
+        <select id="filtroCategoria">
+          <option value="todas">Todas as categorias</option>
+        </select>
+        <select id="filtroConta">
+          <option value="todas">Todas as contas</option>
+        </select>
+        <select id="filtroCartao">
+          <option value="todas">Todos os cartões</option>
+        </select>
+        <button id="botaoOrdemHistorico" class="linkBotao">↓ mais recentes primeiro</button>
+      </div>
+
+      <div id="listaHistoricoCompleto" class="listaHistorico"></div>
     </div>
 
     <!-- VIEW: Contas fixas -->
@@ -325,6 +413,7 @@
         <h2>Novo cartão</h2>
         <form id="formNovoCartao" class="formNovaConta">
           <input type="text" id="nomeCartao" placeholder="Ex.: Nubank, Inter" autocomplete="off" required />
+          <input type="text" id="instituicaoCartao" placeholder="Instituição (ex.: Nubank, Itaú) — opcional" autocomplete="off" />
           <input type="number" id="limiteCartao" placeholder="Limite (ex.: 2000.00)" step="0.01" min="0" required />
           <input type="number" id="fechamentoCartao" placeholder="Dia de fechamento (1-31)" min="1" max="31" required />
           <input type="number" id="vencimentoCartao" placeholder="Dia de vencimento (1-31)" min="1" max="31" required />
@@ -351,6 +440,11 @@
       <section>
         <h2>Compras dessa fatura</h2>
         <div id="listaComprasFatura" class="listaHistorico"></div>
+      </section>
+
+      <section>
+        <h2>Próximas faturas</h2>
+        <div id="listaProximasFaturas" class="listaContasFixasCompleta"></div>
       </section>
     </div>
 
@@ -434,7 +528,8 @@
         <form id="formNovaMeta" class="formNovaConta">
           <input type="text" id="nomeMeta" placeholder="Ex.: Viagem, Reserva de emergência" autocomplete="off" required />
           <input type="number" id="valorAlvoMeta" placeholder="Valor da meta (ex.: 3000.00)" step="0.01" min="0" required />
-          <input type="text" id="prazoMeta" placeholder="Prazo (ex.: dez/2026) — opcional" autocomplete="off" />
+          <select id="contaMeta"></select>
+          <input type="month" id="prazoMeta" placeholder="Prazo (opcional)" />
           <button type="submit">Criar meta</button>
         </form>
       </section>
