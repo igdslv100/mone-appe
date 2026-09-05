@@ -54,7 +54,7 @@ async function atualizarLinha(tabela, id, campos) {
 }
 
 async function carregarDadosDoUsuario() {
-  const [contas, movimentacoes, contasFixas, pagamentos, cartoes, compras, pagamentosFaturas, orcamentos, metas, contribuicoesMetas, transferencias, receitasFixas, recebimentos] = await Promise.all([
+  const [contas, movimentacoes, contasFixas, pagamentos, cartoes, compras, pagamentosFaturas, orcamentos, metas, contribuicoesMetas, transferencias, receitasFixas, recebimentos, contasVariaveis] = await Promise.all([
     supabaseClient.from("contas").select("*"),
     supabaseClient.from("movimentacoes").select("*"),
     supabaseClient.from("contas_fixas").select("*"),
@@ -68,6 +68,7 @@ async function carregarDadosDoUsuario() {
     supabaseClient.from("transferencias").select("*"),
     supabaseClient.from("receitas_fixas").select("*"),
     supabaseClient.from("recebimentos_fixos").select("*"),
+    supabaseClient.from("contas_variaveis").select("*"),
   ]);
 
   let contasMapeadas = (contas.data || []).map((r) => ({ id: r.id, nome: r.nome, tipo: r.tipo }));
@@ -105,6 +106,10 @@ async function carregarDadosDoUsuario() {
       id: r.id, nome: r.nome, valor: Number(r.valor), dia: r.dia, categoria: r.categoria, contaId: r.conta_id, repeticao: r.repeticao,
     })),
     recebimentos: (recebimentos.data || []).map((r) => ({ receitaFixaId: r.receita_fixa_id, mesAno: r.mes_ano, movimentacaoId: r.movimentacao_id })),
+    contasVariaveis: (contasVariaveis.data || []).map((r) => ({
+      id: r.id, nome: r.nome, valor: Number(r.valor), categoria: r.categoria, contaId: r.conta_id,
+      dataPrevista: r.data_prevista, paga: r.paga, movimentacaoId: r.movimentacao_id,
+    })),
   };
 }
 
@@ -304,6 +309,52 @@ async function pagarContaFixa(contaFixa, mesAno, contexto) {
   await inserirLinha("pagamentos_fixas", {
     user_id: usuarioId, conta_fixa_id: pagamento.contaFixaId, mes_ano: pagamento.mesAno, movimentacao_id: pagamento.movimentacaoId,
   });
+}
+
+// ---------- contas variáveis (sem dia fixo, não repetem todo mês) ----------
+
+function contasVariaveisPendentes(contexto) {
+  return contexto.contasVariaveis
+    .filter((cv) => !cv.paga)
+    .sort((a, b) => {
+      if (!a.dataPrevista && !b.dataPrevista) return 0;
+      if (!a.dataPrevista) return 1;
+      if (!b.dataPrevista) return -1;
+      return new Date(a.dataPrevista) - new Date(b.dataPrevista);
+    });
+}
+
+async function pagarContaVariavel(contaVariavel, contexto) {
+  const nova = {
+    id: gerarId(),
+    valor: contaVariavel.valor,
+    tipo: "saida",
+    categoria: contaVariavel.categoria || "Outros",
+    data: new Date().toISOString(),
+    contaId: contaVariavel.contaId,
+    descricao: `${contaVariavel.nome} (conta variável)`,
+  };
+
+  contexto.movimentacoes = [nova, ...contexto.movimentacoes];
+  await inserirLinha("movimentacoes", {
+    id: nova.id, user_id: usuarioId, conta_id: nova.contaId, valor: nova.valor, tipo: nova.tipo,
+    categoria: nova.categoria, data: nova.data, descricao: nova.descricao,
+  });
+
+  contaVariavel.paga = true;
+  contaVariavel.movimentacaoId = nova.id;
+  await atualizarLinha("contas_variaveis", contaVariavel.id, { paga: true, movimentacao_id: nova.id });
+}
+
+function tentarPagarContaVariavelPorTexto(textoMinusculo, contexto) {
+  const contemPagamento = PALAVRAS_PAGAMENTO.some((p) => textoMinusculo.includes(p));
+  if (!contemPagamento) return null;
+
+  const contaVariavel = contexto.contasVariaveis.find((cv) => !cv.paga && textoMinusculo.includes(cv.nome.toLowerCase()));
+  if (!contaVariavel) return null;
+
+  pagarContaVariavel(contaVariavel, contexto);
+  return contaVariavel;
 }
 
 // ---------- receitas fixas ----------
@@ -650,13 +701,17 @@ function calcularProjecaoAtual(contexto) {
   const somaPendentes = pendentes.reduce((soma, item) => soma + item.cf.valor, 0);
   const receitasPendentes = receitasFixasPendentesDoMes(contexto);
   const somaReceitasPendentes = receitasPendentes.reduce((soma, item) => soma + item.rf.valor, 0);
+  const variaveisPendentes = contasVariaveisPendentes(contexto);
+  const somaVariaveisPendentes = variaveisPendentes.reduce((soma, cv) => soma + cv.valor, 0);
   return {
     saldoDisponivel,
     pendentes,
     somaPendentes,
     receitasPendentes,
     somaReceitasPendentes,
-    projecao: saldoDisponivel + somaReceitasPendentes - somaPendentes,
+    variaveisPendentes,
+    somaVariaveisPendentes,
+    projecao: saldoDisponivel + somaReceitasPendentes - somaPendentes - somaVariaveisPendentes,
   };
 }
 
@@ -695,6 +750,17 @@ function gerarEventosFuturos(contexto, hoje, dataFim) {
       }
     });
   }
+
+  // contas variáveis são pontuais (não repetem todo mês) — cada uma entra uma única vez
+  contexto.contasVariaveis.forEach((cv) => {
+    if (cv.paga) return;
+    const dataEvento = cv.dataPrevista ? new Date(cv.dataPrevista + "T00:00:00") : hoje;
+    if (dataEvento <= dataFim) {
+      const dataFinal = dataEvento < hoje ? hoje : dataEvento;
+      eventos.push({ data: dataFinal, valor: -cv.valor, label: cv.nome, tipo: "conta variável" });
+    }
+  });
+
   return eventos.sort((a, b) => a.data - b.data);
 }
 
@@ -726,6 +792,7 @@ function calcularProjecaoDetalhada(contexto, periodo) {
   const totalContasFuturas = eventos.filter((e) => e.tipo === "conta fixa").reduce((s, e) => s + Math.abs(e.valor), 0);
   const totalFaturasFuturas = eventos.filter((e) => e.tipo === "fatura").reduce((s, e) => s + Math.abs(e.valor), 0);
   const totalEntradasPrevistas = eventos.filter((e) => e.tipo === "receita fixa").reduce((s, e) => s + e.valor, 0);
+  const totalContasVariaveis = eventos.filter((e) => e.tipo === "conta variável").reduce((s, e) => s + Math.abs(e.valor), 0);
 
   const mesesNoPeriodo = Math.max(1, (dataFim - hoje) / (1000 * 60 * 60 * 24 * 30));
   const totalMetas = contexto.metas.reduce((s, m) => {
@@ -733,7 +800,7 @@ function calcularProjecaoDetalhada(contexto, periodo) {
     return s + (sugestao ? sugestao * mesesNoPeriodo : 0);
   }, 0);
 
-  const saldoProjetado = saldoDisponivel + totalEntradasPrevistas - totalContasFuturas - totalFaturasFuturas - totalMetas;
+  const saldoProjetado = saldoDisponivel + totalEntradasPrevistas - totalContasFuturas - totalFaturasFuturas - totalContasVariaveis - totalMetas;
 
   let saldoCorrente = saldoDisponivel;
   let dataFalta = null;
@@ -746,25 +813,29 @@ function calcularProjecaoDetalhada(contexto, periodo) {
     }
   });
 
-  return { dataFim, saldoDisponivel, totalContasFuturas, totalFaturasFuturas, totalEntradasPrevistas, totalMetas, saldoProjetado, eventos, dataFalta, faltaValor };
+  return { dataFim, saldoDisponivel, totalContasFuturas, totalFaturasFuturas, totalEntradasPrevistas, totalContasVariaveis, totalMetas, saldoProjetado, eventos, dataFalta, faltaValor };
 }
 
 function renderProjecao(contexto) {
-  const { pendentes, projecao, somaReceitasPendentes } = calcularProjecaoAtual(contexto);
+  const { pendentes, projecao, somaReceitasPendentes, variaveisPendentes } = calcularProjecaoAtual(contexto);
 
   document.getElementById("projecaoValor").textContent = formatarMoeda(projecao);
 
   const alerta = document.getElementById("alertaProjecao");
 
-  if (projecao >= 0 || pendentes.length === 0) {
+  if (projecao >= 0 || (pendentes.length === 0 && variaveisPendentes.length === 0)) {
     alerta.hidden = true;
     return;
   }
 
   const falta = Math.abs(projecao);
-  const prioridades = pendentes
+  const itensPrioridade = [
+    ...pendentes.map((item) => ({ nome: item.cf.nome, valor: item.cf.valor, extra: item.status === "atrasada" ? " (atrasada)" : "" })),
+    ...variaveisPendentes.map((cv) => ({ nome: cv.nome, valor: cv.valor, extra: "" })),
+  ].sort((a, b) => b.valor - a.valor);
+  const prioridades = itensPrioridade
     .slice(0, 3)
-    .map((item) => `<li>${escapeHtml(item.cf.nome)} — dia ${item.cf.dia} · ${formatarMoeda(item.cf.valor)}${item.status === "atrasada" ? " (atrasada)" : ""}</li>`)
+    .map((item) => `<li>${escapeHtml(item.nome)} · ${formatarMoeda(item.valor)}${item.extra}</li>`)
     .join("");
 
   const textoReceitas = somaReceitasPendentes > 0
@@ -1106,6 +1177,44 @@ function renderContasFixas(contasFixas, pagamentos, contas) {
     .join("");
 }
 
+function renderContasVariaveis(contexto) {
+  const alvo = document.getElementById("listaContasVariaveis");
+  if (contexto.contasVariaveis.length === 0) {
+    alvo.innerHTML = '<p class="vazio">Nenhuma conta variável cadastrada ainda.</p>';
+    return;
+  }
+
+  alvo.innerHTML = contexto.contasVariaveis
+    .slice()
+    .sort((a, b) => {
+      if (a.paga !== b.paga) return a.paga ? 1 : -1;
+      if (!a.dataPrevista && !b.dataPrevista) return 0;
+      if (!a.dataPrevista) return 1;
+      if (!b.dataPrevista) return -1;
+      return new Date(a.dataPrevista) - new Date(b.dataPrevista);
+    })
+    .map((cv) => {
+      const status = cv.paga ? "paga" : "pendente";
+      const botao = cv.paga ? "" : `<button class="botaoPagarFixa" data-pagar-variavel="${cv.id}">Marcar como paga</button>`;
+      const dataTexto = cv.dataPrevista ? formatarDataCurta(cv.dataPrevista) : "sem data definida";
+      return `
+        <div class="cardConta">
+          <div class="cardContaTopo">
+            <div class="cardContaNome">${escapeHtml(cv.nome)}</div>
+            <div class="cardContaTopoAcoes">
+              <div class="cardContaTag status-${status}">${ROTULO_STATUS[status]}</div>
+              <button type="button" class="botaoExcluirItem" data-excluir-conta-variavel="${cv.id}" title="Apagar">✕</button>
+            </div>
+          </div>
+          <div class="cardContaSaldo">${formatarMoeda(cv.valor)}</div>
+          <div class="itemMeta">${escapeHtml(cv.categoria)} · ${dataTexto} · ${escapeHtml(nomeDaConta(cv.contaId, contexto.contas))}</div>
+          ${botao}
+        </div>
+      `;
+    })
+    .join("");
+}
+
 function popularSelectContas(contas) {
   const opcoes = contas.map((c) => `<option value="${c.id}">${escapeHtml(c.nome)}</option>`).join("");
 
@@ -1125,6 +1234,9 @@ function popularSelectContas(contas) {
 
   const selectReceitaFixa = document.getElementById("contaReceitaFixa");
   if (selectReceitaFixa) selectReceitaFixa.innerHTML = opcoes;
+
+  const selectContaVariavel = document.getElementById("contaPagamentoVariavel");
+  if (selectContaVariavel) selectContaVariavel.innerHTML = opcoes;
 }
 
 // ---------- render: Cartões e fatura ----------
@@ -1877,6 +1989,7 @@ function renderProjecaoDetalhada(contexto) {
     { rotulo: "Entradas previstas", valor: `+ ${formatarMoeda(dados.totalEntradasPrevistas)}`, cor: "valorEntrada" },
     { rotulo: "Contas futuras", valor: `− ${formatarMoeda(dados.totalContasFuturas)}`, cor: "valorSaida" },
     { rotulo: "Faturas futuras", valor: `− ${formatarMoeda(dados.totalFaturasFuturas)}`, cor: "valorSaida" },
+    { rotulo: "Contas variáveis", valor: `− ${formatarMoeda(dados.totalContasVariaveis)}`, cor: "valorSaida" },
     { rotulo: "Metas planejadas", valor: `− ${formatarMoeda(dados.totalMetas)}`, cor: "valorSaida" },
     { rotulo: "Saldo projetado", valor: formatarMoeda(dados.saldoProjetado), cor: dados.saldoProjetado >= 0 ? "valorEntrada" : "valorSaida" },
   ];
@@ -1920,7 +2033,7 @@ function renderProjecaoDetalhada(contexto) {
   } else {
     listaEventos.innerHTML = dados.eventos
       .map((e) => {
-        const icone = e.tipo === "fatura" ? "💳" : e.tipo === "receita fixa" ? "⬆️" : "📅";
+        const icone = e.tipo === "fatura" ? "💳" : e.tipo === "receita fixa" ? "⬆️" : e.tipo === "conta variável" ? "📊" : "📅";
         const classeValor = e.valor >= 0 ? "valorEntrada" : "valorSaida";
         const sinal = e.valor >= 0 ? "+" : "−";
         return `
@@ -2104,6 +2217,7 @@ function montarResumoParaIA(contexto) {
     projecaoFimDoMes: saldoDisponivel - somaPendentes,
     contasFixasPendentes: pendentes.map((p) => ({ nome: p.cf.nome, valor: p.cf.valor, dia: p.cf.dia, status: p.status })),
     receitasFixasPendentes: receitasFixasPendentesDoMes(contexto).map((p) => ({ nome: p.rf.nome, valor: p.rf.valor, dia: p.rf.dia, status: p.status })),
+    contasVariaveisPendentes: contasVariaveisPendentes(contexto).map((cv) => ({ nome: cv.nome, valor: cv.valor, dataPrevista: cv.dataPrevista })),
     orcamentos: contexto.orcamentos.map((o) => ({ categoria: o.categoria, limite: o.limite, gastoAtual: gastoPorCategoriaMes(o.categoria, contexto) })),
     metas: contexto.metas.map((m) => ({ nome: m.nome, valorAlvo: m.valorAlvo, valorAtual: m.valorAtual, progresso: progressoMeta(m) + "%" })),
     saudeFinanceiraGeral: saude.estado,
@@ -2383,6 +2497,7 @@ function iniciarApp(dadosIniciais) {
     renderReceitasFixas(contexto);
     renderProximasFixas(contasFixas, pagamentos);
     renderContasFixas(contasFixas, pagamentos, contas);
+    renderContasVariaveis(contexto);
     popularSelectContas(contas);
     renderCalendario(contexto);
     renderResumoCartoes(contexto);
@@ -2437,6 +2552,15 @@ function iniciarApp(dadosIniciais) {
     if (receitaRecebida) {
       atualizarTudo();
       mostrarFeedback(`Recebido: <b>${escapeHtml(receitaRecebida.nome)}</b> · ${formatarMoeda(receitaRecebida.valor)}`);
+      inputConversa.value = "";
+      inputConversa.focus();
+      return;
+    }
+
+    const contaVariavelPaga = tentarPagarContaVariavelPorTexto(textoMinusculo, contexto);
+    if (contaVariavelPaga) {
+      atualizarTudo();
+      mostrarFeedback(`Conta paga: <b>${escapeHtml(contaVariavelPaga.nome)}</b> · ${formatarMoeda(contaVariavelPaga.valor)}`);
       inputConversa.value = "";
       inputConversa.focus();
       return;
@@ -2625,6 +2749,66 @@ function iniciarApp(dadosIniciais) {
     valorContaFixa.value = "";
     diaContaFixa.value = "";
     nomeContaFixa.focus();
+  });
+
+  // nova conta variável (sem dia fixo)
+  const formNovaContaVariavel = document.getElementById("formNovaContaVariavel");
+  const nomeContaVariavel = document.getElementById("nomeContaVariavel");
+  const valorContaVariavel = document.getElementById("valorContaVariavel");
+  const categoriaContaVariavel = document.getElementById("categoriaContaVariavel");
+  const dataContaVariavel = document.getElementById("dataContaVariavel");
+  const contaPagamentoVariavel = document.getElementById("contaPagamentoVariavel");
+
+  formNovaContaVariavel.addEventListener("submit", async (evento) => {
+    evento.preventDefault();
+    const nome = nomeContaVariavel.value.trim();
+    const valor = parseFloat(valorContaVariavel.value);
+    const categoria = categoriaContaVariavel.value.trim();
+    if (!nome || isNaN(valor) || !categoria) return;
+
+    const novaContaVariavel = {
+      id: gerarId(),
+      nome,
+      valor,
+      categoria,
+      contaId: contaPagamentoVariavel.value || contexto.contas[0].id,
+      dataPrevista: dataContaVariavel.value || null,
+      paga: false,
+      movimentacaoId: null,
+    };
+
+    contexto.contasVariaveis = [...contexto.contasVariaveis, novaContaVariavel];
+    await inserirLinha("contas_variaveis", {
+      id: novaContaVariavel.id, user_id: usuarioId, nome: novaContaVariavel.nome, valor: novaContaVariavel.valor,
+      categoria: novaContaVariavel.categoria, conta_id: novaContaVariavel.contaId, data_prevista: novaContaVariavel.dataPrevista, paga: false,
+    });
+
+    atualizarTudo();
+    nomeContaVariavel.value = "";
+    valorContaVariavel.value = "";
+    categoriaContaVariavel.value = "";
+    dataContaVariavel.value = "";
+    nomeContaVariavel.focus();
+  });
+
+  // marcar/apagar conta variável
+  document.getElementById("listaContasVariaveis").addEventListener("click", async (evento) => {
+    const botaoExcluir = evento.target.closest("[data-excluir-conta-variavel]");
+    if (botaoExcluir) {
+      const id = botaoExcluir.dataset.excluirContaVariavel;
+      contexto.contasVariaveis = contexto.contasVariaveis.filter((cv) => cv.id !== id);
+      await supabaseClient.from("contas_variaveis").delete().eq("id", id);
+      atualizarTudo();
+      return;
+    }
+
+    const botaoPagar = evento.target.closest("[data-pagar-variavel]");
+    if (botaoPagar) {
+      const contaVariavel = contexto.contasVariaveis.find((cv) => cv.id === botaoPagar.dataset.pagarVariavel);
+      if (!contaVariavel || contaVariavel.paga) return;
+      await pagarContaVariavel(contaVariavel, contexto);
+      atualizarTudo();
+    }
   });
 
   // marcar conta fixa como paga (clique no botão)
@@ -3023,7 +3207,7 @@ function iniciarApp(dadosIniciais) {
 
     const tabelas = [
       "pagamentos_faturas", "pagamentos_fixas", "compras_cartao", "contribuicoes_metas", "transferencias", "recebimentos_fixos",
-      "movimentacoes", "contas_fixas", "receitas_fixas", "cartoes", "orcamentos", "metas", "contas",
+      "movimentacoes", "contas_fixas", "receitas_fixas", "contas_variaveis", "cartoes", "orcamentos", "metas", "contas",
     ];
     for (const tabela of tabelas) {
       await supabaseClient.from(tabela).delete().eq("user_id", usuarioId);
@@ -3043,6 +3227,7 @@ function iniciarApp(dadosIniciais) {
     contexto.transferencias = dadosZerados.transferencias;
     contexto.receitasFixas = dadosZerados.receitasFixas;
     contexto.recebimentos = dadosZerados.recebimentos;
+    contexto.contasVariaveis = dadosZerados.contasVariaveis;
 
     historicoExpandido = false;
     diaSelecionado = null;
