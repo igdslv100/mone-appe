@@ -1,5 +1,5 @@
 // MONE — service worker simples, só pra deixar o app instalável (PWA).
-const CACHE_NOME = "mone-v1";
+const CACHE_NOME = "mone-v2";
 const ARQUIVOS = ["./index.html", "./styles.css", "./app.js", "./manifest.json"];
 
 self.addEventListener("install", (evento) => {
@@ -15,6 +15,15 @@ self.addEventListener("activate", (evento) => {
 });
 
 self.addEventListener("fetch", (evento) => {
+  const url = new URL(evento.request.url);
+
+  // só mexe em GET de arquivo do próprio app — nunca intercepta chamadas
+  // pro Supabase (login, salvar, apagar) nem nada de outro método/origem.
+  // Interceptar isso podia causar reenvio duplicado de uma mesma ação.
+  if (evento.request.method !== "GET" || url.origin !== self.location.origin) {
+    return;
+  }
+
   evento.respondWith(
     fetch(evento.request).catch(() => caches.match(evento.request))
   );
