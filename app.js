@@ -53,7 +53,7 @@ async function atualizarLinha(tabela, id, campos) {
 }
 
 async function carregarDadosDoUsuario() {
-  const [contas, movimentacoes, contasFixas, pagamentos, cartoes, compras, pagamentosFaturas, orcamentos, metas] = await Promise.all([
+  const [contas, movimentacoes, contasFixas, pagamentos, cartoes, compras, pagamentosFaturas, orcamentos, metas, contribuicoesMetas] = await Promise.all([
     supabaseClient.from("contas").select("*"),
     supabaseClient.from("movimentacoes").select("*"),
     supabaseClient.from("contas_fixas").select("*"),
@@ -63,6 +63,7 @@ async function carregarDadosDoUsuario() {
     supabaseClient.from("pagamentos_faturas").select("*"),
     supabaseClient.from("orcamentos").select("*"),
     supabaseClient.from("metas").select("*"),
+    supabaseClient.from("contribuicoes_metas").select("*"),
   ]);
 
   let contasMapeadas = (contas.data || []).map((r) => ({ id: r.id, nome: r.nome, tipo: r.tipo }));
@@ -92,6 +93,7 @@ async function carregarDadosDoUsuario() {
     pagamentosFaturas: (pagamentosFaturas.data || []).map((r) => ({ cartaoId: r.cartao_id, mesAno: r.mes_ano, movimentacaoId: r.movimentacao_id })),
     orcamentos: (orcamentos.data || []).map((r) => ({ id: r.id, categoria: r.categoria, limite: Number(r.limite) })),
     metas: (metas.data || []).map((r) => ({ id: r.id, nome: r.nome, valorAlvo: Number(r.valor_alvo), valorAtual: Number(r.valor_atual), prazo: r.prazo })),
+    contribuicoesMetas: (contribuicoesMetas.data || []).map((r) => ({ id: r.id, metaId: r.meta_id, valor: Number(r.valor), data: r.data })),
   };
 }
 
@@ -402,6 +404,17 @@ function progressoMeta(meta) {
   return Math.min(100, Math.round((meta.valorAtual / meta.valorAlvo) * 100));
 }
 
+async function registrarContribuicaoMeta(meta, valor, contexto) {
+  meta.valorAtual += valor;
+  await atualizarLinha("metas", meta.id, { valor_atual: meta.valorAtual });
+
+  const contribuicao = { id: gerarId(), metaId: meta.id, valor, data: new Date().toISOString() };
+  contexto.contribuicoesMetas = [...contexto.contribuicoesMetas, contribuicao];
+  await inserirLinha("contribuicoes_metas", {
+    id: contribuicao.id, user_id: usuarioId, meta_id: contribuicao.metaId, valor: contribuicao.valor, data: contribuicao.data,
+  });
+}
+
 async function tentarRegistrarMeta(textoMinusculo, contexto) {
   if (contexto.metas.length === 0) return null;
 
@@ -414,8 +427,7 @@ async function tentarRegistrarMeta(textoMinusculo, contexto) {
   const valor = extrairValor(textoMinusculo);
   if (valor === null) return null;
 
-  meta.valorAtual += valor;
-  await atualizarLinha("metas", meta.id, { valor_atual: meta.valorAtual });
+  await registrarContribuicaoMeta(meta, valor, contexto);
 
   return { meta, valor };
 }
@@ -542,6 +554,7 @@ function renderHistorico(movimentacoes, contas) {
             <div class="itemMeta">${escapeHtml(m.categoria)} · ${escapeHtml(nomeDaConta(m.contaId, contas))} · ${formatarDataCurta(m.data)}</div>
           </div>
           <div class="itemValor ${classeValor}">${sinal} ${formatarMoeda(m.valor)}</div>
+          <button type="button" class="botaoExcluirItem" data-excluir="${m.id}" title="Apagar">✕</button>
         </div>
       `;
     })
@@ -936,8 +949,7 @@ function renderCalendario(contexto) {
 
 // ---------- orçamento e análise ----------
 
-function gastoPorCategoriaMes(categoria, contexto) {
-  const mesAno = mesAnoDe(new Date());
+function gastoPorCategoriaMes(categoria, contexto, mesAno = mesAnoDe(new Date())) {
   let soma = 0;
 
   contexto.movimentacoes.forEach((m) => {
@@ -1016,6 +1028,159 @@ function renderOrcamento(contexto) {
         </div>
       `;
     })
+    .join("");
+}
+
+const CORES_GRAFICO = ["#173B32", "#4F8068", "#D5A84B", "#8FB89A", "#A9793A", "#2E5C4E", "#E7CB94", "#5B7A6C", "#C9A06B"];
+
+function gastosDoMes(mesAno, contexto) {
+  return CATEGORIAS_ORCAMENTO
+    .map((categoria, i) => ({ categoria, gasto: gastoPorCategoriaMes(categoria, contexto, mesAno), cor: CORES_GRAFICO[i % CORES_GRAFICO.length] }))
+    .filter((item) => item.gasto > 0);
+}
+
+// ---------- fechamento do mês ----------
+
+let fechamentoMesVisualizado = new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1);
+
+function renderFechamentoMes(contexto) {
+  const mesAno = mesAnoDe(fechamentoMesVisualizado);
+  document.getElementById("fechamentoRotuloMes").textContent = `${NOMES_MES[fechamentoMesVisualizado.getMonth()]} ${fechamentoMesVisualizado.getFullYear()}`;
+
+  let entradas = 0;
+  let saidas = 0;
+  contexto.movimentacoes.forEach((m) => {
+    if (mesAnoDe(new Date(m.data)) === mesAno) {
+      if (m.tipo === "entrada") entradas += m.valor;
+      else saidas += m.valor;
+    }
+  });
+
+  const dadosCategorias = gastosDoMes(mesAno, contexto).sort((a, b) => b.gasto - a.gasto);
+  const maiorCategoria = dadosCategorias[0];
+
+  const guardadoEmMetas = contexto.contribuicoesMetas
+    .filter((c) => mesAnoDe(new Date(c.data)) === mesAno)
+    .reduce((soma, c) => soma + c.valor, 0);
+
+  const contasFixasPagas = contexto.pagamentos.filter((p) => p.mesAno === mesAno).length;
+
+  const cartoes = [
+    { rotulo: "Entradas", valor: formatarMoeda(entradas), cor: "valorEntrada" },
+    { rotulo: "Saídas", valor: formatarMoeda(saidas), cor: "valorSaida" },
+    { rotulo: "Saldo do mês", valor: formatarMoeda(entradas - saidas), cor: entradas - saidas >= 0 ? "valorEntrada" : "valorSaida" },
+    { rotulo: "Maior gasto", valor: maiorCategoria ? `${maiorCategoria.categoria} (${formatarMoeda(maiorCategoria.gasto)})` : "—", cor: "" },
+    { rotulo: "Guardado em metas", valor: formatarMoeda(guardadoEmMetas), cor: "valorEntrada" },
+    { rotulo: "Contas fixas pagas", valor: `${contasFixasPagas}`, cor: "" },
+  ];
+
+  document.getElementById("fechamentoGrid").innerHTML = cartoes
+    .map((c) => `
+      <div class="fechamentoCard">
+        <div class="fechamentoRotulo">${c.rotulo}</div>
+        <div class="fechamentoValor ${c.cor}">${c.valor}</div>
+      </div>
+    `)
+    .join("");
+}
+
+function renderGraficoEvolucao(contexto) {
+  const hoje = new Date();
+  const meses = [];
+  for (let i = 5; i >= 0; i--) {
+    const data = new Date(hoje.getFullYear(), hoje.getMonth() - i, 1);
+    meses.push({ mesAno: mesAnoDe(data), rotulo: NOMES_MES[data.getMonth()].slice(0, 3) });
+  }
+
+  const totais = meses.map((m) => {
+    let entradas = 0;
+    let saidas = 0;
+    contexto.movimentacoes.forEach((mov) => {
+      if (mesAnoDe(new Date(mov.data)) === m.mesAno) {
+        if (mov.tipo === "entrada") entradas += mov.valor;
+        else saidas += mov.valor;
+      }
+    });
+    return { ...m, entradas, saidas };
+  });
+
+  const maior = Math.max(1, ...totais.map((t) => Math.max(t.entradas, t.saidas)));
+
+  document.getElementById("graficoEvolucao").innerHTML = totais
+    .map(
+      (t) => `
+        <div class="colunaMes">
+          <div class="parDeBarras">
+            <div class="barraVertical barraVerticalEntrada" style="height:${Math.round((t.entradas / maior) * 100)}%" title="Entradas: ${formatarMoeda(t.entradas)}"></div>
+            <div class="barraVertical barraVerticalSaida" style="height:${Math.round((t.saidas / maior) * 100)}%" title="Saídas: ${formatarMoeda(t.saidas)}"></div>
+          </div>
+          <div class="rotuloMesEvolucao">${t.rotulo}</div>
+        </div>
+      `
+    )
+    .join("");
+}
+
+function renderGraficoPizza(contexto) {
+  const mesAno = mesAnoDe(new Date());
+  const dados = gastosDoMes(mesAno, contexto);
+  const pizza = document.getElementById("graficoPizza");
+  const legenda = document.getElementById("legendaPizza");
+
+  if (dados.length === 0) {
+    pizza.style.background = CORES_ARVORE.verdeClaro;
+    legenda.innerHTML = '<p class="vazio">Nada pra mostrar ainda.</p>';
+    return;
+  }
+
+  const total = dados.reduce((soma, d) => soma + d.gasto, 0);
+  let acumulado = 0;
+  const fatias = dados.map((d) => {
+    const inicio = (acumulado / total) * 100;
+    acumulado += d.gasto;
+    const fim = (acumulado / total) * 100;
+    return `${d.cor} ${inicio}% ${fim}%`;
+  });
+
+  pizza.style.background = `conic-gradient(${fatias.join(", ")})`;
+
+  legenda.innerHTML = dados
+    .sort((a, b) => b.gasto - a.gasto)
+    .map((d) => {
+      const pct = Math.round((d.gasto / total) * 100);
+      return `
+        <div class="legendaPizzaItem">
+          <i style="background:${d.cor}"></i>
+          <span>${escapeHtml(d.categoria)}</span>
+          <span class="legendaPizzaValor">${pct}%</span>
+        </div>
+      `;
+    })
+    .join("");
+}
+
+function renderGraficoContas(contexto) {
+  const alvo = document.getElementById("graficoContas");
+  if (contexto.contas.length === 0) {
+    alvo.innerHTML = '<p class="vazio">Nenhuma conta cadastrada ainda.</p>';
+    return;
+  }
+
+  const saldos = contexto.contas.map((c) => ({ nome: c.nome, saldo: saldoDaConta(c.id, contexto.movimentacoes) }));
+  const maior = Math.max(1, ...saldos.map((s) => Math.abs(s.saldo)));
+
+  alvo.innerHTML = saldos
+    .map(
+      (s) => `
+        <div class="barGraficoItem">
+          <div class="barGraficoLabel">
+            <span>${escapeHtml(s.nome)}</span>
+            <span>${formatarMoeda(s.saldo)}</span>
+          </div>
+          <div class="barraProgresso"><div class="barraProgressoPreenchimento${s.saldo < 0 ? " estourada" : ""}" style="width:${Math.round((Math.abs(s.saldo) / maior) * 100)}%"></div></div>
+        </div>
+      `
+    )
     .join("");
 }
 
@@ -1283,6 +1448,27 @@ function renderArvore(contexto) {
   document.getElementById("arvoreExplicacaoTexto").textContent = motivoTexto;
 }
 
+// ---------- IA conversacional (pergunte ao MONE) ----------
+
+function montarResumoParaIA(contexto) {
+  const { totalEntradas, totalSaidas, faturasAbertas, saldoDisponivel } = calcularSaldoDisponivel(contexto);
+  const pendentes = contasFixasPendentesDoMes(contexto);
+  const somaPendentes = pendentes.reduce((soma, item) => soma + item.cf.valor, 0);
+  const saude = calcularSaudeFinanceira(contexto);
+
+  return {
+    saldoDisponivel,
+    entradasDoMes: totalEntradas,
+    saidasDoMes: totalSaidas,
+    faturasEmAberto: faturasAbertas,
+    projecaoFimDoMes: saldoDisponivel - somaPendentes,
+    contasFixasPendentes: pendentes.map((p) => ({ nome: p.cf.nome, valor: p.cf.valor, dia: p.cf.dia, status: p.status })),
+    orcamentos: contexto.orcamentos.map((o) => ({ categoria: o.categoria, limite: o.limite, gastoAtual: gastoPorCategoriaMes(o.categoria, contexto) })),
+    metas: contexto.metas.map((m) => ({ nome: m.nome, valorAlvo: m.valorAlvo, valorAtual: m.valorAtual, progresso: progressoMeta(m) + "%" })),
+    saudeFinanceiraGeral: saude.estado,
+  };
+}
+
 // ---------- render: Receitas ----------
 
 function renderReceitas(movimentacoes, contas) {
@@ -1432,6 +1618,69 @@ function configurarFormulariosAuth() {
   }
 }
 
+// ---------- notificações push ----------
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const bruto = atob(base64);
+  return Uint8Array.from([...bruto].map((c) => c.charCodeAt(0)));
+}
+
+async function atualizarBotaoNotificacoes() {
+  const botao = document.getElementById("botaoNotificacoes");
+  if (!botao) return;
+
+  if (!("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) {
+    botao.hidden = true;
+    return;
+  }
+
+  if (Notification.permission === "granted") {
+    const registro = await navigator.serviceWorker.ready;
+    const inscricaoAtual = await registro.pushManager.getSubscription();
+    botao.textContent = inscricaoAtual ? "🔔 avisos ativados" : "🔔 ativar avisos";
+  } else if (Notification.permission === "denied") {
+    botao.textContent = "🔕 avisos bloqueados";
+  } else {
+    botao.textContent = "🔔 ativar avisos";
+  }
+}
+
+async function ativarNotificacoes() {
+  if (!("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) {
+    return;
+  }
+
+  const permissao = await Notification.requestPermission();
+  if (permissao !== "granted") {
+    await atualizarBotaoNotificacoes();
+    return;
+  }
+
+  const registro = await navigator.serviceWorker.ready;
+  let inscricao = await registro.pushManager.getSubscription();
+  if (!inscricao) {
+    inscricao = await registro.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(MONE_VAPID_PUBLIC_KEY),
+    });
+  }
+
+  const dados = inscricao.toJSON();
+  await supabaseClient.from("push_subscriptions").upsert(
+    {
+      user_id: usuarioId,
+      endpoint: dados.endpoint,
+      p256dh: dados.keys.p256dh,
+      auth_key: dados.keys.auth,
+    },
+    { onConflict: "endpoint" }
+  );
+
+  await atualizarBotaoNotificacoes();
+}
+
 async function iniciar() {
   configurarFormulariosAuth();
 
@@ -1464,6 +1713,10 @@ function iniciarApp(dadosIniciais) {
     renderResumoOrcamento(contexto);
     renderOrcamento(contexto);
     renderAnalise(contexto);
+    renderFechamentoMes(contexto);
+    renderGraficoEvolucao(contexto);
+    renderGraficoPizza(contexto);
+    renderGraficoContas(contexto);
     renderResumoMetas(contexto);
     renderMetas(contexto);
     renderArvore(contexto);
@@ -1471,6 +1724,9 @@ function iniciarApp(dadosIniciais) {
 
   popularSelectCategoriaOrcamento();
   atualizarTudo();
+  atualizarBotaoNotificacoes();
+
+  document.getElementById("botaoNotificacoes").addEventListener("click", ativarNotificacoes);
 
   // registrar movimentação por conversa
   const formConversa = document.getElementById("formConversa");
@@ -1546,6 +1802,42 @@ function iniciarApp(dadosIniciais) {
     inputConversa.focus();
   });
 
+  // pergunte ao MONE (IA conversacional)
+  const formPerguntaIA = document.getElementById("formPerguntaIA");
+  const inputPerguntaIA = document.getElementById("inputPerguntaIA");
+  const respostaIA = document.getElementById("respostaIA");
+  const botaoPerguntarIA = document.getElementById("botaoPerguntarIA");
+
+  formPerguntaIA.addEventListener("submit", async (evento) => {
+    evento.preventDefault();
+    const pergunta = inputPerguntaIA.value.trim();
+    if (!pergunta) return;
+
+    respostaIA.hidden = false;
+    respostaIA.classList.add("carregando");
+    respostaIA.textContent = "Pensando...";
+    botaoPerguntarIA.disabled = true;
+
+    try {
+      const { data, error } = await supabaseClient.functions.invoke("ia-assistente", {
+        body: { pergunta, resumo: montarResumoParaIA(contexto) },
+      });
+
+      respostaIA.classList.remove("carregando");
+      if (error || !data || data.error) {
+        respostaIA.textContent = (data && data.error) || "Não consegui responder agora. Tenta de novo em instantes.";
+      } else {
+        respostaIA.textContent = data.resposta;
+      }
+    } catch (erro) {
+      respostaIA.classList.remove("carregando");
+      respostaIA.textContent = "Não consegui responder agora. Confere sua internet e tenta de novo.";
+    }
+
+    botaoPerguntarIA.disabled = false;
+    inputPerguntaIA.value = "";
+  });
+
   // nova conta
   const formNovaConta = document.getElementById("formNovaConta");
   const nomeConta = document.getElementById("nomeConta");
@@ -1616,6 +1908,16 @@ function iniciarApp(dadosIniciais) {
 
     pagarContaFixa(contaFixa, mesAno, contexto);
     atualizarTudo();
+  });
+
+  // navegação do fechamento do mês
+  document.getElementById("fechamentoAnterior").addEventListener("click", () => {
+    fechamentoMesVisualizado = new Date(fechamentoMesVisualizado.getFullYear(), fechamentoMesVisualizado.getMonth() - 1, 1);
+    renderFechamentoMes(contexto);
+  });
+  document.getElementById("fechamentoSeguinte").addEventListener("click", () => {
+    fechamentoMesVisualizado = new Date(fechamentoMesVisualizado.getFullYear(), fechamentoMesVisualizado.getMonth() + 1, 1);
+    renderFechamentoMes(contexto);
   });
 
   // navegação do calendário — modo mês/semana
@@ -1747,6 +2049,26 @@ function iniciarApp(dadosIniciais) {
     renderHistorico(contexto.movimentacoes, contexto.contas);
   });
 
+  // apagar uma movimentação do histórico
+  document.getElementById("listaHistorico").addEventListener("click", async (evento) => {
+    const botao = evento.target.closest("[data-excluir]");
+    if (!botao) return;
+
+    const id = botao.dataset.excluir;
+
+    contexto.movimentacoes = contexto.movimentacoes.filter((m) => m.id !== id);
+    contexto.pagamentos = contexto.pagamentos.filter((p) => p.movimentacaoId !== id);
+    contexto.pagamentosFaturas = contexto.pagamentosFaturas.filter((p) => p.movimentacaoId !== id);
+
+    await Promise.all([
+      supabaseClient.from("movimentacoes").delete().eq("id", id),
+      supabaseClient.from("pagamentos_fixas").delete().eq("movimentacao_id", id),
+      supabaseClient.from("pagamentos_faturas").delete().eq("movimentacao_id", id),
+    ]);
+
+    atualizarTudo();
+  });
+
   // nova meta
   const formNovaMeta = document.getElementById("formNovaMeta");
   const nomeMeta = document.getElementById("nomeMeta");
@@ -1786,8 +2108,7 @@ function iniciarApp(dadosIniciais) {
     const valor = parseFloat(input.value);
     if (isNaN(valor) || valor <= 0) return;
 
-    meta.valorAtual += valor;
-    await atualizarLinha("metas", meta.id, { valor_atual: meta.valorAtual });
+    await registrarContribuicaoMeta(meta, valor, contexto);
     atualizarTudo();
   });
 
@@ -1809,7 +2130,7 @@ function iniciarApp(dadosIniciais) {
     botaoSim.textContent = "Apagando...";
 
     const tabelas = [
-      "pagamentos_faturas", "pagamentos_fixas", "compras_cartao",
+      "pagamentos_faturas", "pagamentos_fixas", "compras_cartao", "contribuicoes_metas",
       "movimentacoes", "contas_fixas", "cartoes", "orcamentos", "metas", "contas",
     ];
     for (const tabela of tabelas) {
@@ -1826,6 +2147,7 @@ function iniciarApp(dadosIniciais) {
     contexto.pagamentosFaturas = dadosZerados.pagamentosFaturas;
     contexto.orcamentos = dadosZerados.orcamentos;
     contexto.metas = dadosZerados.metas;
+    contexto.contribuicoesMetas = dadosZerados.contribuicoesMetas;
 
     historicoExpandido = false;
     diaSelecionado = null;

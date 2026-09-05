@@ -19,3 +19,32 @@ self.addEventListener("fetch", (evento) => {
     fetch(evento.request).catch(() => caches.match(evento.request))
   );
 });
+
+self.addEventListener("push", (evento) => {
+  let dados = { title: "MONE", body: "Você tem uma novidade no MONE." };
+  try {
+    dados = evento.data.json();
+  } catch (erro) {
+    /* usa o texto padrão acima */
+  }
+
+  evento.waitUntil(
+    self.registration.showNotification(dados.title || "MONE", {
+      body: dados.body,
+      icon: "icons/icon-192.png",
+      badge: "icons/icon-192.png",
+    })
+  );
+});
+
+self.addEventListener("notificationclick", (evento) => {
+  evento.notification.close();
+  evento.waitUntil(
+    self.clients.matchAll({ type: "window" }).then((clientes) => {
+      for (const cliente of clientes) {
+        if ("focus" in cliente) return cliente.focus();
+      }
+      if (self.clients.openWindow) return self.clients.openWindow("./index.html");
+    })
+  );
+});

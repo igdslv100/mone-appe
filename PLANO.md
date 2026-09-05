@@ -67,11 +67,12 @@ Cada movimentação pertence a uma conta e a uma categoria. Contas fixas e fatur
 - [x] **Fase 7 — Metas**: Criação e acompanhamento de metas financeiras
 - [x] **Fase 8 — Minha árvore**: Árvore que reflete a saúde financeira (cresce/murcha)
 - [x] **Fase Final (parte 1) — Back-end**: Supabase conectado (9 tabelas + RLS + login por e-mail/senha)
-- [ ] **Fase Final (parte 2) — Publicar**: deploy na Vercel, instalação como PWA no celular
+- [x] **Fase Final (parte 2) — Deploy**: publicado na Vercel (`mone-appe.vercel.app`), PWA pronta pra instalar
+- [ ] **Pendente**: instalar o MONE na tela de início do celular (lembrete ativo)
 
 ## 6. Versão 2 (fica pra depois)
 
-- IA conversacional avançada (perguntar coisas ao app e receber conselhos personalizados em resposta)
-- Gráficos e relatórios mais completos
-- Resumo de fechamento do mês (total gasto, total guardado, metas batidas)
-- Notificações push de verdade
+- [x] IA conversacional avançada (perguntar coisas ao app e receber conselhos personalizados em resposta) — Gemini + Edge Function segura
+- [x] Gráficos e relatórios mais completos — evolução 6 meses, pizza por categoria, saldo por conta
+- [x] Resumo de fechamento do mês (total gasto, total guardado, contas fixas pagas, maior gasto)
+- [x] Notificações push de verdade — conta fixa/fatura vencendo amanhã, orçamento perto de estourar, projeção negativa (roda sozinho todo dia às 9h)

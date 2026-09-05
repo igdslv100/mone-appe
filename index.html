@@ -62,6 +62,7 @@
         <div class="nome">MONE</div>
       </div>
       <div class="topoAcoes">
+        <button id="botaoNotificacoes" class="linkBotao">🔔 ativar avisos</button>
         <button id="botaoSair" class="linkBotao">sair</button>
         <div class="avatar">👋</div>
       </div>
@@ -118,6 +119,20 @@
           <button type="submit">Registrar</button>
         </form>
         <div id="feedback" class="feedback" hidden></div>
+      </section>
+
+      <section class="conversa conversaIA">
+        <h2>🧠 Pergunte ao MONE</h2>
+        <form id="formPerguntaIA" class="caixaConversa">
+          <input
+            type="text"
+            id="inputPerguntaIA"
+            placeholder='Ex.: "Posso gastar R$200 em lazer esse mês?"'
+            autocomplete="off"
+          />
+          <button type="submit" id="botaoPerguntarIA">Perguntar</button>
+        </form>
+        <div id="respostaIA" class="respostaIA" hidden></div>
       </section>
 
       <section class="zona zona--dinheiro">
@@ -359,16 +374,44 @@
       </section>
     </div>
 
-    <!-- VIEW: Análise -->
+    <!-- VIEW: Análise / Gráficos -->
     <div id="viewAnalise" class="view" hidden>
       <div class="cabecalhoView">
-        <button class="voltar" data-ir="orcamento">← voltar</button>
-        <h2 class="tituloView">Análise</h2>
+        <button class="voltar" data-ir="inicio">← voltar</button>
+        <h2 class="tituloView">Gráficos</h2>
       </div>
+
+      <section class="fechamentoSecao">
+        <h2>📅 Fechamento do mês</h2>
+        <div class="navMes">
+          <button id="fechamentoAnterior" class="setaMes">‹</button>
+          <div id="fechamentoRotuloMes" class="rotuloMes">—</div>
+          <button id="fechamentoSeguinte" class="setaMes">›</button>
+        </div>
+        <div id="fechamentoGrid" class="fechamentoGrid"></div>
+      </section>
+
+      <section>
+        <h2>Entradas x saídas (últimos 6 meses)</h2>
+        <div id="graficoEvolucao" class="graficoEvolucao"></div>
+        <div class="legendaCalendario">
+          <span><i class="pontoEntrada"></i> entradas</span>
+          <span><i class="pontoSaida"></i> saídas</span>
+        </div>
+      </section>
 
       <section>
         <h2>Gastos por categoria (este mês)</h2>
+        <div class="graficoPizzaLinha">
+          <div id="graficoPizza" class="graficoPizza"></div>
+          <div id="legendaPizza" class="legendaPizza"></div>
+        </div>
         <div id="graficoAnalise" class="graficoAnalise"></div>
+      </section>
+
+      <section>
+        <h2>Saldo por conta</h2>
+        <div id="graficoContas" class="graficoContas"></div>
       </section>
 
       <section>
@@ -414,12 +457,17 @@
         <span>💳</span>
         <small>Cartões</small>
       </div>
+      <div class="navItem" data-ir="analise" data-nav="analise">
+        <span>📊</span>
+        <small>Gráficos</small>
+      </div>
     </nav>
   </div>
 
   <script>
     const MONE_SUPABASE_URL = "https://eqnrepmsboxyqnoytcok.supabase.co";
     const MONE_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVxbnJlcG1zYm94eXFub3l0Y29rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg1NTc2NjEsImV4cCI6MjEwNDEzMzY2MX0.TMDFIobfnzEoGs9CQW0CmP6RaARrM3efouwk0d5K9as";
+    const MONE_VAPID_PUBLIC_KEY = "BNemhhbAwcGoKl2EnlbhO19pB7cdLgmG45lcgFp2f3gwYZrEMdzgnyEFu_f5e1PwZTVA29i9P7ctahyQSQa2e6Y";
   </script>
   <script src="app.js"></script>
 </body>
