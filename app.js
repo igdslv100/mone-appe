@@ -1095,6 +1095,12 @@ function renderHistoricoCompleto(contexto) {
 
 function renderContas(contas, movimentacoes, transferencias) {
   const lista = document.getElementById("listaContas");
+
+  if (contas.length === 0) {
+    lista.innerHTML = '<p class="vazio">Nenhuma conta cadastrada ainda — adicione abaixo.</p>';
+    return;
+  }
+
   lista.innerHTML = contas
     .map((conta) => {
       const saldo = saldoDaConta(conta.id, movimentacoes, transferencias);
@@ -1102,7 +1108,10 @@ function renderContas(contas, movimentacoes, transferencias) {
         <div class="cardConta">
           <div class="cardContaTopo">
             <div class="cardContaNome">${escapeHtml(conta.nome)}</div>
-            <div class="cardContaTag">${TIPOS_CONTA_LABEL[conta.tipo] || conta.tipo}</div>
+            <div class="cardContaTopoAcoes">
+              <div class="cardContaTag">${TIPOS_CONTA_LABEL[conta.tipo] || conta.tipo}</div>
+              ${contas.length > 1 ? `<button type="button" class="botaoExcluirItem" data-excluir-conta="${conta.id}" title="Apagar">✕</button>` : ""}
+            </div>
           </div>
           <div class="cardContaSaldo">${formatarMoeda(saldo)}</div>
         </div>
@@ -1346,6 +1355,7 @@ function renderFatura(contexto) {
             <div class="itemMeta">${escapeHtml(compra.categoria)} · parcela ${parcela}/${compra.parcelas}</div>
           </div>
           <div class="itemValor valorSaida">${formatarMoeda(compra.valorParcela)}</div>
+          <button type="button" class="botaoExcluirItem" data-excluir-compra="${compra.id}" title="Apagar compra (todas as parcelas)">✕</button>
         </div>
       `)
       .join("");
@@ -1655,7 +1665,10 @@ function renderOrcamento(contexto) {
         <div class="cardConta">
           <div class="cardContaTopo">
             <div class="cardContaNome">${escapeHtml(o.categoria)}</div>
-            <div class="cardContaTag${estourado ? " status-atrasada" : ""}">${formatarMoeda(gasto)} de ${formatarMoeda(o.limite)}</div>
+            <div class="cardContaTopoAcoes">
+              <div class="cardContaTag${estourado ? " status-atrasada" : ""}">${formatarMoeda(gasto)} de ${formatarMoeda(o.limite)}</div>
+              <button type="button" class="botaoExcluirItem" data-excluir-orcamento="${o.id}" title="Apagar">✕</button>
+            </div>
           </div>
           <div class="barraProgresso"><div class="barraProgressoPreenchimento${estourado ? " estourada" : ""}" style="width:${pct}%"></div></div>
         </div>
@@ -2685,6 +2698,26 @@ function iniciarApp(dadosIniciais) {
     nomeConta.focus();
   });
 
+  // apagar conta (mantém pelo menos uma)
+  document.getElementById("listaContas").addEventListener("click", async (evento) => {
+    const botao = evento.target.closest("[data-excluir-conta]");
+    if (!botao) return;
+    if (contexto.contas.length <= 1) return;
+
+    const id = botao.dataset.excluirConta;
+    contexto.contas = contexto.contas.filter((c) => c.id !== id);
+    contexto.movimentacoes.forEach((m) => { if (m.contaId === id) m.contaId = null; });
+    contexto.contasFixas.forEach((cf) => { if (cf.contaId === id) cf.contaId = null; });
+    contexto.receitasFixas.forEach((rf) => { if (rf.contaId === id) rf.contaId = null; });
+    contexto.contasVariaveis.forEach((cv) => { if (cv.contaId === id) cv.contaId = null; });
+    contexto.cartoes.forEach((cartao) => { if (cartao.contaId === id) cartao.contaId = null; });
+    contexto.metas.forEach((m) => { if (m.contaId === id) m.contaId = null; });
+    contexto.transferencias = contexto.transferencias.filter((t) => t.contaOrigemId !== id && t.contaDestinoId !== id);
+
+    await supabaseClient.from("contas").delete().eq("id", id);
+    atualizarTudo();
+  });
+
   // transferência entre contas (formulário manual)
   const formTransferencia = document.getElementById("formTransferencia");
   const contaOrigemTransferencia = document.getElementById("contaOrigemTransferencia");
@@ -3069,6 +3102,17 @@ function iniciarApp(dadosIniciais) {
     atualizarTudo();
   });
 
+  // apagar uma compra do cartão (todas as parcelas)
+  document.getElementById("listaComprasFatura").addEventListener("click", async (evento) => {
+    const botao = evento.target.closest("[data-excluir-compra]");
+    if (!botao) return;
+
+    const id = botao.dataset.excluirCompra;
+    contexto.compras = contexto.compras.filter((c) => c.id !== id);
+    await supabaseClient.from("compras_cartao").delete().eq("id", id);
+    atualizarTudo();
+  });
+
   // definir/atualizar limite de orçamento
   const formOrcamento = document.getElementById("formOrcamento");
   const categoriaOrcamento = document.getElementById("categoriaOrcamento");
@@ -3092,6 +3136,17 @@ function iniciarApp(dadosIniciais) {
 
     atualizarTudo();
     limiteOrcamento.value = "";
+  });
+
+  // apagar limite de orçamento
+  document.getElementById("listaOrcamento").addEventListener("click", async (evento) => {
+    const botao = evento.target.closest("[data-excluir-orcamento]");
+    if (!botao) return;
+
+    const id = botao.dataset.excluirOrcamento;
+    contexto.orcamentos = contexto.orcamentos.filter((o) => o.id !== id);
+    await supabaseClient.from("orcamentos").delete().eq("id", id);
+    atualizarTudo();
   });
 
   // mostrar mais/menos no histórico
