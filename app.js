@@ -6,6 +6,14 @@ const CHAVE_ULTIMO_CARTAO = "mone_ultimo_cartao";
 const PALAVRAS_PAGAMENTO = ["paguei", "pago", "quitei"];
 const PALAVRAS_META = ["guardei", "depositei", "poupei"];
 const PALAVRAS_TRANSFERENCIA = ["transferi", "transferir", "transferência", "transferencia"];
+const PALAVRAS_DINHEIRO_EXTERNO = [
+  "não é meu", "nao e meu", "não é minha", "nao e minha", "não era meu", "nao era meu",
+  "dinheiro que não é meu", "dinheiro que nao e meu", "não é meu dinheiro", "nao e meu dinheiro",
+  "dinheiro de outra pessoa", "dinheiro emprestado", "me emprestaram", "emprestaram",
+  "outra pessoa pagou", "pagaram por mim", "não saiu da minha conta", "nao saiu da minha conta",
+  "não foi da minha conta", "nao foi da minha conta", "não foi meu dinheiro", "nao foi meu dinheiro",
+];
+const PALAVRAS_LIMITE = ["limite"];
 const NOMES_MES = [
   "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
   "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
@@ -142,7 +150,9 @@ function gerarId() {
 // ---------- interpretação da frase ----------
 
 function extrairValor(texto) {
-  const match = texto.match(/(?:r\$\s*)?(\d{1,3}(?:\.\d{3})*(?:,\d{1,2})?|\d+(?:,\d{1,2})?)(?:\s*reais)?/i);
+  // primeiro tenta número com milhar separado por ponto (ex.: 1.234,56); senão,
+  // número corrido (ex.: 3000) — nessa ordem, senão "3000" virava só "300".
+  const match = texto.match(/(?:r\$\s*)?(\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?|\d+(?:,\d{1,2})?)(?:\s*reais)?/i);
   if (!match) return null;
   const bruto = match[1].replace(/\./g, "").replace(",", ".");
   const valor = parseFloat(bruto);
@@ -180,6 +190,10 @@ function extrairData(textoMinusculo) {
     if (!isNaN(data.getTime())) return data.toISOString();
   }
   return hoje.toISOString();
+}
+
+function mencionaDinheiroExterno(textoMinusculo) {
+  return PALAVRAS_DINHEIRO_EXTERNO.some((p) => textoMinusculo.includes(p));
 }
 
 function extrairConta(textoMinusculo, contas) {
@@ -244,9 +258,10 @@ function interpretarFrase(textoOriginal, contas) {
   const tipo = extrairTipo(textoMinusculo);
   const categoria = extrairCategoria(textoMinusculo, tipo);
   const data = extrairData(textoMinusculo);
-  const contaId = extrairConta(textoMinusculo, contas);
+  const externo = mencionaDinheiroExterno(textoMinusculo);
+  const contaId = externo ? null : extrairConta(textoMinusculo, contas);
 
-  return { valor, tipo, categoria, data, contaId, descricao: texto };
+  return { valor, tipo, categoria, data, contaId, externo, descricao: texto };
 }
 
 // ---------- cálculos ----------
@@ -292,15 +307,15 @@ function statusContaFixa(contaFixa, mesAno, pagamentos, hoje) {
   return hoje > vencimento ? "atrasada" : "pendente";
 }
 
-async function pagarContaFixa(contaFixa, mesAno, contexto) {
+async function pagarContaFixa(contaFixa, mesAno, contexto, opcoes = {}) {
   const nova = {
     id: gerarId(),
     valor: contaFixa.valor,
     tipo: "saida",
     categoria: contaFixa.categoria || "Contas",
     data: new Date().toISOString(),
-    contaId: contaFixa.contaId,
-    descricao: `${contaFixa.nome} (conta fixa)`,
+    contaId: opcoes.externo ? null : contaFixa.contaId,
+    descricao: opcoes.externo ? `${contaFixa.nome} (conta fixa, pago com dinheiro que não é seu)` : `${contaFixa.nome} (conta fixa)`,
   };
 
   contexto.movimentacoes = [nova, ...contexto.movimentacoes];
@@ -377,15 +392,15 @@ function contasVariaveisPendentes(contexto) {
   });
 }
 
-async function pagarContaVariavel(contaVariavel, contexto) {
+async function pagarContaVariavel(contaVariavel, contexto, opcoes = {}) {
   const nova = {
     id: gerarId(),
     valor: contaVariavel.valor,
     tipo: "saida",
     categoria: contaVariavel.categoria || "Outros",
     data: new Date().toISOString(),
-    contaId: contaVariavel.contaId,
-    descricao: `${contaVariavel.nome} (conta variável)`,
+    contaId: opcoes.externo ? null : contaVariavel.contaId,
+    descricao: opcoes.externo ? `${contaVariavel.nome} (conta variável, pago com dinheiro que não é seu)` : `${contaVariavel.nome} (conta variável)`,
   };
 
   contexto.movimentacoes = [nova, ...contexto.movimentacoes];
@@ -416,8 +431,9 @@ function tentarPagarContaVariavelPorTexto(textoMinusculo, contexto) {
   const contaVariavel = pendentes.find((cv) => textoMinusculo.includes(cv.nome.toLowerCase()));
   if (!contaVariavel) return null;
 
-  pagarContaVariavel(contaVariavel, contexto);
-  return contaVariavel;
+  const externo = mencionaDinheiroExterno(textoMinusculo);
+  pagarContaVariavel(contaVariavel, contexto, { externo });
+  return { ...contaVariavel, externo };
 }
 
 // ---------- receitas fixas ----------
@@ -541,15 +557,15 @@ function statusFatura(cartao, mesAno, pagamentosFaturas, hoje) {
   return hoje > vencimento ? "atrasada" : "pendente";
 }
 
-async function pagarFatura(cartao, mesAno, total, contexto) {
+async function pagarFatura(cartao, mesAno, total, contexto, opcoes = {}) {
   const nova = {
     id: gerarId(),
     valor: total,
     tipo: "saida",
     categoria: "Cartão",
     data: new Date().toISOString(),
-    contaId: cartao.contaId,
-    descricao: `Fatura ${cartao.nome} (${mesAno})`,
+    contaId: opcoes.externo ? null : cartao.contaId,
+    descricao: opcoes.externo ? `Fatura ${cartao.nome} (${mesAno}, pago com dinheiro que não é seu)` : `Fatura ${cartao.nome} (${mesAno})`,
     cartaoId: cartao.id,
   };
 
@@ -632,12 +648,38 @@ function tentarPagarFaturaPorTexto(textoMinusculo, contexto) {
   const total = totalFatura(cartao.id, mesAno, contexto.compras, cartao);
   if (total <= 0) return null;
 
-  pagarFatura(cartao, mesAno, total, contexto);
-  return { cartao, total };
+  const externo = mencionaDinheiroExterno(textoMinusculo);
+  pagarFatura(cartao, mesAno, total, contexto, { externo });
+  return { cartao, total, externo };
+}
+
+function tentarAtualizarLimiteCartaoPorTexto(textoMinusculo, contexto) {
+  if (contexto.cartoes.length === 0) return null;
+  if (!PALAVRAS_LIMITE.some((p) => textoMinusculo.includes(p))) return null;
+
+  const mencionaCartao =
+    textoMinusculo.includes("cartão") ||
+    textoMinusculo.includes("cartao") ||
+    contexto.cartoes.some((c) => textoMinusculo.includes(c.nome.toLowerCase()));
+  if (!mencionaCartao) return null;
+
+  const valor = extrairValor(textoMinusculo);
+  if (valor === null) return { erro: "Entendi que é sobre o limite do cartão, mas não achei o novo valor 🤔" };
+
+  const ultimoCartaoId = localStorage.getItem(CHAVE_ULTIMO_CARTAO);
+  const cartao = extrairCartaoDoTexto(textoMinusculo, contexto.cartoes, ultimoCartaoId);
+
+  return { cartao, valor };
+}
+
+async function atualizarLimiteCartao(cartao, novoLimite, contexto) {
+  cartao.limite = novoLimite;
+  await atualizarLinha("cartoes", cartao.id, { limite: novoLimite });
 }
 
 async function tentarRegistrarCompraCartao(textoOriginal, textoMinusculo, contexto) {
   if (contexto.cartoes.length === 0) return null;
+  if (PALAVRAS_LIMITE.some((p) => textoMinusculo.includes(p))) return null;
 
   const mencionaCartao =
     textoMinusculo.includes("cartão") ||
@@ -721,8 +763,9 @@ function tentarPagarContaFixaPorTexto(textoMinusculo, contexto) {
 
   if (!contaFixa) return null;
 
-  pagarContaFixa(contaFixa, mesAno, contexto);
-  return contaFixa;
+  const externo = mencionaDinheiroExterno(textoMinusculo);
+  pagarContaFixa(contaFixa, mesAno, contexto, { externo });
+  return { ...contaFixa, externo };
 }
 
 // ---------- render: Início ----------
@@ -2658,7 +2701,8 @@ function iniciarApp(dadosIniciais) {
     const contaVariavelPaga = tentarPagarContaVariavelPorTexto(textoMinusculo, contexto);
     if (contaVariavelPaga) {
       atualizarTudo();
-      mostrarFeedback(`Conta paga: <b>${escapeHtml(contaVariavelPaga.nome)}</b> · ${formatarMoeda(contaVariavelPaga.valor)}`);
+      const avisoExterno = contaVariavelPaga.externo ? " (não descontei de nenhuma conta, já que não foi seu dinheiro)" : "";
+      mostrarFeedback(`Conta paga: <b>${escapeHtml(contaVariavelPaga.nome)}</b> · ${formatarMoeda(contaVariavelPaga.valor)}${avisoExterno}`);
       inputConversa.value = "";
       inputConversa.focus();
       return;
@@ -2668,7 +2712,8 @@ function iniciarApp(dadosIniciais) {
 
     if (contaFixaPaga) {
       atualizarTudo();
-      mostrarFeedback(`Conta paga: <b>${escapeHtml(contaFixaPaga.nome)}</b> · ${formatarMoeda(contaFixaPaga.valor)}`);
+      const avisoExterno = contaFixaPaga.externo ? " (não descontei de nenhuma conta, já que não foi seu dinheiro)" : "";
+      mostrarFeedback(`Conta paga: <b>${escapeHtml(contaFixaPaga.nome)}</b> · ${formatarMoeda(contaFixaPaga.valor)}${avisoExterno}`);
       inputConversa.value = "";
       inputConversa.focus();
       return;
@@ -2677,7 +2722,22 @@ function iniciarApp(dadosIniciais) {
     const faturaPaga = tentarPagarFaturaPorTexto(textoMinusculo, contexto);
     if (faturaPaga) {
       atualizarTudo();
-      mostrarFeedback(`Fatura paga: <b>${escapeHtml(faturaPaga.cartao.nome)}</b> · ${formatarMoeda(faturaPaga.total)}`);
+      const avisoExterno = faturaPaga.externo ? " (não descontei de nenhuma conta, já que não foi seu dinheiro)" : "";
+      mostrarFeedback(`Fatura paga: <b>${escapeHtml(faturaPaga.cartao.nome)}</b> · ${formatarMoeda(faturaPaga.total)}${avisoExterno}`);
+      inputConversa.value = "";
+      inputConversa.focus();
+      return;
+    }
+
+    const limiteCartao = tentarAtualizarLimiteCartaoPorTexto(textoMinusculo, contexto);
+    if (limiteCartao) {
+      if (limiteCartao.erro) {
+        mostrarFeedback(limiteCartao.erro);
+        return;
+      }
+      await atualizarLimiteCartao(limiteCartao.cartao, limiteCartao.valor, contexto);
+      atualizarTudo();
+      mostrarFeedback(`Limite atualizado: <b>${escapeHtml(limiteCartao.cartao.nome)}</b> agora é ${formatarMoeda(limiteCartao.valor)}`);
       inputConversa.value = "";
       inputConversa.focus();
       return;
@@ -2715,13 +2775,16 @@ function iniciarApp(dadosIniciais) {
       id: nova.id, user_id: usuarioId, conta_id: nova.contaId, valor: nova.valor, tipo: nova.tipo,
       categoria: nova.categoria, data: nova.data, descricao: nova.descricao,
     });
-    localStorage.setItem(CHAVE_ULTIMA_CONTA, interpretacao.contaId);
+    if (interpretacao.contaId) localStorage.setItem(CHAVE_ULTIMA_CONTA, interpretacao.contaId);
 
     atualizarTudo();
 
     const tipoTexto = interpretacao.tipo === "entrada" ? "entrada" : "saída";
+    const ondeTexto = interpretacao.externo
+      ? "dinheiro que não é seu (não descontei de nenhuma conta)"
+      : escapeHtml(nomeDaConta(interpretacao.contaId, contexto.contas));
     mostrarFeedback(
-      `Entendi: <b>${formatarMoeda(interpretacao.valor)}</b> · ${tipoTexto} · ${escapeHtml(interpretacao.categoria)} · ${escapeHtml(nomeDaConta(interpretacao.contaId, contexto.contas))}`
+      `Entendi: <b>${formatarMoeda(interpretacao.valor)}</b> · ${tipoTexto} · ${escapeHtml(interpretacao.categoria)} · ${ondeTexto}`
     );
 
     inputConversa.value = "";
