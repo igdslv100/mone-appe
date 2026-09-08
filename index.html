@@ -363,7 +363,17 @@
           <input type="text" id="nomeContaVariavel" placeholder="Ex.: IPVA, Conserto do carro" autocomplete="off" required />
           <input type="number" id="valorContaVariavel" placeholder="Valor (ex.: 250.00)" step="0.01" min="0" required />
           <input type="text" id="categoriaContaVariavel" placeholder="Categoria (ex.: Transporte)" autocomplete="off" required />
-          <input type="date" id="dataContaVariavel" placeholder="Data prevista (opcional)" />
+          <select id="repeticaoContaVariavel">
+            <option value="">Não repete (uma vez só)</option>
+            <option value="1">Todo mês</option>
+            <option value="2">A cada 2 meses (ex.: mês sim, mês não)</option>
+            <option value="3">A cada 3 meses</option>
+            <option value="4">A cada 4 meses</option>
+            <option value="6">A cada 6 meses</option>
+            <option value="12">A cada 12 meses (anual)</option>
+          </select>
+          <input type="date" id="dataContaVariavel" placeholder="Data prevista (se não repetir)" />
+          <input type="number" id="diaContaVariavelRecorrente" placeholder="Dia do mês (se repetir)" min="1" max="31" hidden />
           <select id="contaPagamentoVariavel"></select>
           <button type="submit">Adicionar conta variável</button>
         </form>

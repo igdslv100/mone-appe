@@ -54,7 +54,7 @@ async function atualizarLinha(tabela, id, campos) {
 }
 
 async function carregarDadosDoUsuario() {
-  const [contas, movimentacoes, contasFixas, pagamentos, cartoes, compras, pagamentosFaturas, orcamentos, metas, contribuicoesMetas, transferencias, receitasFixas, recebimentos, contasVariaveis] = await Promise.all([
+  const [contas, movimentacoes, contasFixas, pagamentos, cartoes, compras, pagamentosFaturas, orcamentos, metas, contribuicoesMetas, transferencias, receitasFixas, recebimentos, contasVariaveis, pagamentosVariaveis] = await Promise.all([
     supabaseClient.from("contas").select("*"),
     supabaseClient.from("movimentacoes").select("*"),
     supabaseClient.from("contas_fixas").select("*"),
@@ -69,6 +69,7 @@ async function carregarDadosDoUsuario() {
     supabaseClient.from("receitas_fixas").select("*"),
     supabaseClient.from("recebimentos_fixos").select("*"),
     supabaseClient.from("contas_variaveis").select("*"),
+    supabaseClient.from("pagamentos_variaveis").select("*"),
   ]);
 
   let contasMapeadas = (contas.data || []).map((r) => ({ id: r.id, nome: r.nome, tipo: r.tipo }));
@@ -109,6 +110,10 @@ async function carregarDadosDoUsuario() {
     contasVariaveis: (contasVariaveis.data || []).map((r) => ({
       id: r.id, nome: r.nome, valor: Number(r.valor), categoria: r.categoria, contaId: r.conta_id,
       dataPrevista: r.data_prevista, paga: r.paga, movimentacaoId: r.movimentacao_id,
+      intervaloMeses: r.intervalo_meses, dia: r.dia, mesReferencia: r.mes_referencia,
+    })),
+    pagamentosVariaveis: (pagamentosVariaveis.data || []).map((r) => ({
+      contaVariavelId: r.conta_variavel_id, mesAno: r.mes_ano, movimentacaoId: r.movimentacao_id,
     })),
   };
 }
@@ -311,17 +316,65 @@ async function pagarContaFixa(contaFixa, mesAno, contexto) {
   });
 }
 
-// ---------- contas variáveis (sem dia fixo, não repetem todo mês) ----------
+// ---------- contas variáveis (sem dia fixo, ou que repetem em intervalos não mensais) ----------
+
+function contaVariavelERecorrente(cv) {
+  return !!cv.intervaloMeses;
+}
+
+function mesesEntreMesAno(mesAnoA, mesAnoB) {
+  const [anoA, mesA] = mesAnoA.split("-").map(Number);
+  const [anoB, mesB] = mesAnoB.split("-").map(Number);
+  return (anoB - anoA) * 12 + (mesB - mesA);
+}
+
+function ehOcorrenciaVariavel(cv, mesAno) {
+  if (!contaVariavelERecorrente(cv)) return true;
+  if (!cv.mesReferencia) return false;
+  const diff = mesesEntreMesAno(cv.mesReferencia, mesAno);
+  return diff >= 0 && diff % cv.intervaloMeses === 0;
+}
+
+function contaVariavelEstaPaga(cv, mesAno, pagamentosVariaveis) {
+  if (!contaVariavelERecorrente(cv)) return cv.paga;
+  return pagamentosVariaveis.some((p) => p.contaVariavelId === cv.id && p.mesAno === mesAno);
+}
+
+function statusContaVariavel(cv, mesAno, contexto, hoje) {
+  if (contaVariavelEstaPaga(cv, mesAno, contexto.pagamentosVariaveis)) return "paga";
+
+  const dia = contaVariavelERecorrente(cv) ? cv.dia : (cv.dataPrevista ? new Date(cv.dataPrevista + "T00:00:00").getDate() : null);
+  if (dia === null) return "pendente";
+
+  const [ano, mes] = mesAno.split("-").map(Number);
+  const diaLimite = Math.min(dia, diasNoMes(ano, mes - 1));
+  const vencimento = new Date(ano, mes - 1, diaLimite);
+  return hoje > vencimento ? "atrasada" : "pendente";
+}
 
 function contasVariaveisPendentes(contexto) {
-  return contexto.contasVariaveis
-    .filter((cv) => !cv.paga)
-    .sort((a, b) => {
-      if (!a.dataPrevista && !b.dataPrevista) return 0;
-      if (!a.dataPrevista) return 1;
-      if (!b.dataPrevista) return -1;
-      return new Date(a.dataPrevista) - new Date(b.dataPrevista);
-    });
+  const hoje = new Date();
+  const mesAno = mesAnoDe(hoje);
+  const itens = [];
+
+  contexto.contasVariaveis.forEach((cv) => {
+    if (contaVariavelERecorrente(cv)) {
+      if (!ehOcorrenciaVariavel(cv, mesAno)) return;
+      if (contaVariavelEstaPaga(cv, mesAno, contexto.pagamentosVariaveis)) return;
+    } else if (cv.paga) {
+      return;
+    }
+    itens.push(cv);
+  });
+
+  return itens.sort((a, b) => {
+    const dataA = contaVariavelERecorrente(a) ? a.dia : (a.dataPrevista ? new Date(a.dataPrevista).getDate() : null);
+    const dataB = contaVariavelERecorrente(b) ? b.dia : (b.dataPrevista ? new Date(b.dataPrevista).getDate() : null);
+    if (dataA === null && dataB === null) return 0;
+    if (dataA === null) return 1;
+    if (dataB === null) return -1;
+    return dataA - dataB;
+  });
 }
 
 async function pagarContaVariavel(contaVariavel, contexto) {
@@ -341,16 +394,26 @@ async function pagarContaVariavel(contaVariavel, contexto) {
     categoria: nova.categoria, data: nova.data, descricao: nova.descricao,
   });
 
-  contaVariavel.paga = true;
-  contaVariavel.movimentacaoId = nova.id;
-  await atualizarLinha("contas_variaveis", contaVariavel.id, { paga: true, movimentacao_id: nova.id });
+  if (contaVariavelERecorrente(contaVariavel)) {
+    const mesAno = mesAnoDe(new Date());
+    const pagamento = { contaVariavelId: contaVariavel.id, mesAno, movimentacaoId: nova.id };
+    contexto.pagamentosVariaveis = [...contexto.pagamentosVariaveis, pagamento];
+    await inserirLinha("pagamentos_variaveis", {
+      user_id: usuarioId, conta_variavel_id: pagamento.contaVariavelId, mes_ano: pagamento.mesAno, movimentacao_id: pagamento.movimentacaoId,
+    });
+  } else {
+    contaVariavel.paga = true;
+    contaVariavel.movimentacaoId = nova.id;
+    await atualizarLinha("contas_variaveis", contaVariavel.id, { paga: true, movimentacao_id: nova.id });
+  }
 }
 
 function tentarPagarContaVariavelPorTexto(textoMinusculo, contexto) {
   const contemPagamento = PALAVRAS_PAGAMENTO.some((p) => textoMinusculo.includes(p));
   if (!contemPagamento) return null;
 
-  const contaVariavel = contexto.contasVariaveis.find((cv) => !cv.paga && textoMinusculo.includes(cv.nome.toLowerCase()));
+  const pendentes = contasVariaveisPendentes(contexto);
+  const contaVariavel = pendentes.find((cv) => textoMinusculo.includes(cv.nome.toLowerCase()));
   if (!contaVariavel) return null;
 
   pagarContaVariavel(contaVariavel, contexto);
@@ -733,6 +796,15 @@ function gerarEventosFuturos(contexto, hoje, dataFim) {
       }
     });
 
+    contexto.contasVariaveis.forEach((cv) => {
+      if (!contaVariavelERecorrente(cv) || !ehOcorrenciaVariavel(cv, mesAno)) return;
+      const dia = Math.min(cv.dia, totalDiasMes);
+      const dataVenc = new Date(dataMes.getFullYear(), dataMes.getMonth(), dia);
+      if (dataVenc >= hoje && dataVenc <= dataFim && !contaVariavelEstaPaga(cv, mesAno, contexto.pagamentosVariaveis)) {
+        eventos.push({ data: dataVenc, valor: -cv.valor, label: cv.nome, tipo: "conta variável" });
+      }
+    });
+
     contexto.receitasFixas.forEach((rf) => {
       const dia = Math.min(rf.dia, totalDiasMes);
       const dataReceb = new Date(dataMes.getFullYear(), dataMes.getMonth(), dia);
@@ -751,9 +823,9 @@ function gerarEventosFuturos(contexto, hoje, dataFim) {
     });
   }
 
-  // contas variáveis são pontuais (não repetem todo mês) — cada uma entra uma única vez
+  // contas variáveis que não repetem — cada uma entra uma única vez
   contexto.contasVariaveis.forEach((cv) => {
-    if (cv.paga) return;
+    if (contaVariavelERecorrente(cv) || cv.paga) return;
     const dataEvento = cv.dataPrevista ? new Date(cv.dataPrevista + "T00:00:00") : hoje;
     if (dataEvento <= dataFim) {
       const dataFinal = dataEvento < hoje ? hoje : dataEvento;
@@ -1193,30 +1265,43 @@ function renderContasVariaveis(contexto) {
     return;
   }
 
+  const hoje = new Date();
+  const mesAnoAtual = mesAnoDe(hoje);
+
   alvo.innerHTML = contexto.contasVariaveis
     .slice()
     .sort((a, b) => {
-      if (a.paga !== b.paga) return a.paga ? 1 : -1;
-      if (!a.dataPrevista && !b.dataPrevista) return 0;
-      if (!a.dataPrevista) return 1;
-      if (!b.dataPrevista) return -1;
-      return new Date(a.dataPrevista) - new Date(b.dataPrevista);
+      const pagaA = contaVariavelEstaPaga(a, mesAnoAtual, contexto.pagamentosVariaveis);
+      const pagaB = contaVariavelEstaPaga(b, mesAnoAtual, contexto.pagamentosVariaveis);
+      if (pagaA !== pagaB) return pagaA ? 1 : -1;
+      return 0;
     })
     .map((cv) => {
-      const status = cv.paga ? "paga" : "pendente";
-      const botao = cv.paga ? "" : `<button class="botaoPagarFixa" data-pagar-variavel="${cv.id}">Marcar como paga</button>`;
-      const dataTexto = cv.dataPrevista ? formatarDataCurta(cv.dataPrevista) : "sem data definida";
+      const recorrente = contaVariavelERecorrente(cv);
+      const status = statusContaVariavel(cv, mesAnoAtual, contexto, hoje);
+      const podeAgir = recorrente ? ehOcorrenciaVariavel(cv, mesAnoAtual) && status !== "paga" : status !== "paga";
+      const botao = podeAgir ? `<button class="botaoPagarFixa" data-pagar-variavel="${cv.id}">Marcar como paga</button>` : "";
+
+      let repeticaoTexto;
+      if (recorrente) {
+        repeticaoTexto = cv.intervaloMeses === 1 ? `todo mês, dia ${cv.dia}` : `a cada ${cv.intervaloMeses} meses, dia ${cv.dia}`;
+      } else {
+        repeticaoTexto = cv.dataPrevista ? formatarDataCurta(cv.dataPrevista) : "sem data definida";
+      }
+
+      const rotuloStatus = recorrente && !ehOcorrenciaVariavel(cv, mesAnoAtual) ? "Não é esse mês" : ROTULO_STATUS[status];
+
       return `
         <div class="cardConta">
           <div class="cardContaTopo">
             <div class="cardContaNome">${escapeHtml(cv.nome)}</div>
             <div class="cardContaTopoAcoes">
-              <div class="cardContaTag status-${status}">${ROTULO_STATUS[status]}</div>
+              <div class="cardContaTag status-${status}">${rotuloStatus}</div>
               <button type="button" class="botaoExcluirItem" data-excluir-conta-variavel="${cv.id}" title="Apagar">✕</button>
             </div>
           </div>
           <div class="cardContaSaldo">${formatarMoeda(cv.valor)}</div>
-          <div class="itemMeta">${escapeHtml(cv.categoria)} · ${dataTexto} · ${escapeHtml(nomeDaConta(cv.contaId, contexto.contas))}</div>
+          <div class="itemMeta">${escapeHtml(cv.categoria)} · ${repeticaoTexto} · ${escapeHtml(nomeDaConta(cv.contaId, contexto.contas))}</div>
           ${botao}
         </div>
       `;
@@ -2784,13 +2869,22 @@ function iniciarApp(dadosIniciais) {
     nomeContaFixa.focus();
   });
 
-  // nova conta variável (sem dia fixo)
+  // nova conta variável (sem dia fixo, ou que repete em intervalos não mensais)
   const formNovaContaVariavel = document.getElementById("formNovaContaVariavel");
   const nomeContaVariavel = document.getElementById("nomeContaVariavel");
   const valorContaVariavel = document.getElementById("valorContaVariavel");
   const categoriaContaVariavel = document.getElementById("categoriaContaVariavel");
+  const repeticaoContaVariavel = document.getElementById("repeticaoContaVariavel");
   const dataContaVariavel = document.getElementById("dataContaVariavel");
+  const diaContaVariavelRecorrente = document.getElementById("diaContaVariavelRecorrente");
   const contaPagamentoVariavel = document.getElementById("contaPagamentoVariavel");
+
+  repeticaoContaVariavel.addEventListener("change", () => {
+    const repete = repeticaoContaVariavel.value !== "";
+    dataContaVariavel.hidden = repete;
+    diaContaVariavelRecorrente.hidden = !repete;
+    diaContaVariavelRecorrente.required = repete;
+  });
 
   formNovaContaVariavel.addEventListener("submit", async (evento) => {
     evento.preventDefault();
@@ -2799,21 +2893,30 @@ function iniciarApp(dadosIniciais) {
     const categoria = categoriaContaVariavel.value.trim();
     if (!nome || isNaN(valor) || !categoria) return;
 
+    const intervaloMeses = repeticaoContaVariavel.value ? parseInt(repeticaoContaVariavel.value, 10) : null;
+    const recorrente = intervaloMeses !== null;
+    const dia = recorrente ? parseInt(diaContaVariavelRecorrente.value, 10) : null;
+    if (recorrente && isNaN(dia)) return;
+
     const novaContaVariavel = {
       id: gerarId(),
       nome,
       valor,
       categoria,
       contaId: contaPagamentoVariavel.value || contexto.contas[0].id,
-      dataPrevista: dataContaVariavel.value || null,
+      dataPrevista: recorrente ? null : (dataContaVariavel.value || null),
       paga: false,
       movimentacaoId: null,
+      intervaloMeses,
+      dia,
+      mesReferencia: recorrente ? mesAnoDe(new Date()) : null,
     };
 
     contexto.contasVariaveis = [...contexto.contasVariaveis, novaContaVariavel];
     await inserirLinha("contas_variaveis", {
       id: novaContaVariavel.id, user_id: usuarioId, nome: novaContaVariavel.nome, valor: novaContaVariavel.valor,
       categoria: novaContaVariavel.categoria, conta_id: novaContaVariavel.contaId, data_prevista: novaContaVariavel.dataPrevista, paga: false,
+      intervalo_meses: novaContaVariavel.intervaloMeses, dia: novaContaVariavel.dia, mes_referencia: novaContaVariavel.mesReferencia,
     });
 
     atualizarTudo();
@@ -2821,6 +2924,11 @@ function iniciarApp(dadosIniciais) {
     valorContaVariavel.value = "";
     categoriaContaVariavel.value = "";
     dataContaVariavel.value = "";
+    diaContaVariavelRecorrente.value = "";
+    repeticaoContaVariavel.value = "";
+    dataContaVariavel.hidden = false;
+    diaContaVariavelRecorrente.hidden = true;
+    diaContaVariavelRecorrente.required = false;
     nomeContaVariavel.focus();
   });
 
@@ -2830,6 +2938,7 @@ function iniciarApp(dadosIniciais) {
     if (botaoExcluir) {
       const id = botaoExcluir.dataset.excluirContaVariavel;
       contexto.contasVariaveis = contexto.contasVariaveis.filter((cv) => cv.id !== id);
+      contexto.pagamentosVariaveis = contexto.pagamentosVariaveis.filter((p) => p.contaVariavelId !== id);
       await supabaseClient.from("contas_variaveis").delete().eq("id", id);
       atualizarTudo();
       return;
@@ -3261,7 +3370,7 @@ function iniciarApp(dadosIniciais) {
     botaoSim.textContent = "Apagando...";
 
     const tabelas = [
-      "pagamentos_faturas", "pagamentos_fixas", "compras_cartao", "contribuicoes_metas", "transferencias", "recebimentos_fixos",
+      "pagamentos_faturas", "pagamentos_fixas", "compras_cartao", "contribuicoes_metas", "transferencias", "recebimentos_fixos", "pagamentos_variaveis",
       "movimentacoes", "contas_fixas", "receitas_fixas", "contas_variaveis", "cartoes", "orcamentos", "metas", "contas",
     ];
     for (const tabela of tabelas) {
@@ -3283,6 +3392,7 @@ function iniciarApp(dadosIniciais) {
     contexto.receitasFixas = dadosZerados.receitasFixas;
     contexto.recebimentos = dadosZerados.recebimentos;
     contexto.contasVariaveis = dadosZerados.contasVariaveis;
+    contexto.pagamentosVariaveis = dadosZerados.pagamentosVariaveis;
 
     historicoExpandido = false;
     diaSelecionado = null;
